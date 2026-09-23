@@ -233,3 +233,48 @@ function minutes($time)
 
     return 0; // invalid format
 }
+
+function GetLogo($user)
+{
+    $baseUrl = url('/');
+    $hostname = request()->getHost();
+    $logos = '';
+
+    if ($user) {
+        // user-based logo
+        $logos = $baseUrl . '/storage/upload/' . $user->id . '/logo/' . $user->details->logo;
+    } else {
+        if ($hostname == 'crm.goertrip.club') {
+            $logos = $baseUrl . '/images/goertrip/logo.png';
+        } elseif ($hostname == 'crm.ziatravels.co.in') {
+            $logos = $baseUrl . '/images/ziatravels/logo.png';
+        } elseif ($hostname == 'admin.clickpaytrip.com') {
+            $logos = $baseUrl . '/images/clickpaytrip/logo.png';
+        }
+    }
+    return $logos;
+}
+function generateCardNumber($userId)
+{
+    // Get current date/time components
+    $now = now(); // Laravel Carbon instance
+    $hours   = str_pad($now->format('H'), 2, '0', STR_PAD_LEFT);
+    $minutes = str_pad($now->format('i'), 2, '0', STR_PAD_LEFT);
+    $seconds = str_pad($now->format('s'), 2, '0', STR_PAD_LEFT);
+    $day     = str_pad($now->format('d'), 2, '0', STR_PAD_LEFT);
+    $month   = str_pad($now->format('m'), 2, '0', STR_PAD_LEFT);
+
+    // Combine date/time components (12 digits)
+    $timeDigits = $month . $day . $hours . $minutes . $seconds;
+
+    // Generate random 4-digit number
+    $randomDigits = str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
+
+    // Combine userId + timeDigits + randomDigits
+    $cardNumber = substr($userId . $timeDigits . $randomDigits, 0, 16);
+
+    // Format (keep digits only, no extra spacing like React)
+    $formattedNumber = trim($cardNumber);
+
+    return $formattedNumber;
+}
