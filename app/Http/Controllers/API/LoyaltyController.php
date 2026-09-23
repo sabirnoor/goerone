@@ -445,7 +445,7 @@ class LoyaltyController extends Controller
 
             if ($storeData && $storeData->OTPAllowed == 1) {
                 $otp = !empty($request->otp) ? $request->otp : 0;
-                $verified = true; //$this->otpService->verifyOtp($user, $request->phone, $otp);
+                $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
             } else {
                 $verified = true;
             }
