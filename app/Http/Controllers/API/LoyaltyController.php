@@ -25,6 +25,7 @@ use Laravel\Sanctum\PersonalAccessToken;
 use Mpdf\Mpdf;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class LoyaltyController extends Controller
 {
@@ -46,35 +47,99 @@ class LoyaltyController extends Controller
     public function redeemReward(Request $request)
     {
         $user = $request->user();
+        $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
 
         $validator = Validator::make($request->all(), [
-            'discount' => 'required|integer|min:0',
-            'order_amount' => 'nullable|integer|min:0',
-            'user_id' => 'required|integer|exists:users,id',
-            'card_id' => 'required|integer|exists:loyalty_card,card_id',
-            'reward_id' => 'required|integer|exists:reward,reward_id',
-            'storeToken' => 'nullable',
-            'phone' => 'required|string',
-            // 'otp' => 'required|digits:6',
+            'amount' => 'required|integer|min:1',
+            'membershipId' => 'nullable|integer||exists:loyalty_program,program_id',
+            'reward_id' => [
+                'required',
+                'integer',
+                Rule::exists(LoyaltyReward::class, 'reward_id')
+                    ->where(fn($q) => $q->where('AgencyID', $AgencyID))
+            ],
+            'store_id' => [
+                'required',
+                'integer',
+                Rule::exists(Store::class, 'id')
+                    ->where(fn($q) => $q->where('AgencyID', $AgencyID))
+            ]
 
         ], [
-            'discount.min' => 'The discount amount must be greater than 0.',
-            'order_amount.min' => 'The order amount must be greater than 0.',
+            'amount.min' => 'The discount amount must be greater than 1.',
+            'store_id' => 'Selected store is not found',
         ]);
 
         if ($validator->fails()) {
+            $errors = json_encode($validator->messages());
+            $errorArray = [];
+            if (json_decode($errors, 1)) {
+                foreach (json_decode($errors, 1) as $err) {
+                    foreach ($err as $errs) {
+                        $errorArray[] = ($errs);
+                    }
+                }
+            }
             return response()->json([
                 'status' => [
                     'success' => false,
                     'httpStatus' => 422,
                 ],
-                'message' => 'Validation failed',
+                'message' => implode(',', $errorArray),
                 'error' => $validator->errors()
             ]);
         }
-        // pr($request->all());
-        // die;
-        $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+        DB::beginTransaction();
+        try {
+            if (isset($request->membershipId) && $request->membershipId > 0) {
+                $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
+                    ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                    ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                    ->where('user_card.status', 'active')->first();
+                $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
+                $post['cardNumbers'] = [];
+                $post['keyword'] = '';
+                $post['program_id'] = $request->membershipId ?? 0;
+                $UnAssignloyaltycard = LoyaltyCard::getUnAssignloyaltycardAuto($user, 25, $post);
+                $card_id = isset($UnAssignloyaltycard[0]['card_id']) ? $UnAssignloyaltycard[0]['card_id'] : 0;
+                $currentDate = Carbon::now()->format('Y-m-d H:i:s');
+                $twoMonthsLater = Carbon::now()->addMonths(12)->format('Y-m-d H:i:s');
+                if ($card_id == 0) {
+                    $card_number = generateCardNumber($user->AgencyID);
+                    $CreateNewcard = [
+                        'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                        'UserSysId' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                        "program_id" => $request->membershipId ?? 0,
+                        "status" => "active",
+                        "card_number" => $card_number,
+                        "card_type" => "premium",
+                        "issue_date" => $currentDate,
+                        "initial_points" => "0",
+                        "expiration_date" => $twoMonthsLater
+                    ];
+                    pr($CreateNewcard);
+                    die;
+                    $card_id = LoyaltyCard::insertGetId($CreateNewcard);
+                }
+
+                pr($card_id);
+                pr($checkUserCardExist);
+            }
+
+            die;
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 400,
+                ],
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+        pr($request->all());
+        pr($user);
+        die;
         if (empty($request->storeToken) && !empty($request->store_id)) {
             $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
             $token = $store->createToken('store-token')->plainTextToken;
@@ -1555,51 +1620,51 @@ class LoyaltyController extends Controller
         pr($redemption_id);
         die;
     }
-    
-public function cityService(Request $request)
-{
-    try {
-        $city = trim($request->city ?? '');
 
-        // `city` present -> auto-detect's exact serviceability check.
-        // `city` empty   -> store-backed city search / top-N popular list.
-        return $city !== ''
-            ? $this->resolveCityServiceability($request)
-            : $this->searchServiceableCities($request);
-    } catch (\Throwable $th) {
-        return response()->json([
-            'status' => [
-                'success' => false,
-                'httpStatus' => 500,
-            ],
-            'message' => $th->getMessage(),
-        ]);
-    }
-}
+    public function cityService(Request $request)
+    {
+        try {
+            $city = trim($request->city ?? '');
 
-private function resolveCityServiceability(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'city' => 'required|string|max:191',
-        'state' => 'nullable|string|max:191',
-        'country' => 'nullable|string|max:191',
-    ]);
-
-    if ($validator->fails()) {
-        return response()->json([
-            'status' => [
-                'success' => false,
-                'httpStatus' => 201,
-            ],
-            'message' => $validator->errors()->first(),
-        ]);
+            // `city` present -> auto-detect's exact serviceability check.
+            // `city` empty   -> store-backed city search / top-N popular list.
+            return $city !== ''
+                ? $this->resolveCityServiceability($request)
+                : $this->searchServiceableCities($request);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 500,
+                ],
+                'message' => $th->getMessage(),
+            ]);
+        }
     }
 
-    $city = trim($request->city);
-    $country = trim($request->country ?? '');
-    $user = $request->user();
+    private function resolveCityServiceability(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'city' => 'required|string|max:191',
+            'state' => 'nullable|string|max:191',
+            'country' => 'nullable|string|max:191',
+        ]);
 
-    $query = Store::select(
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 201,
+                ],
+                'message' => $validator->errors()->first(),
+            ]);
+        }
+
+        $city = trim($request->city);
+        $country = trim($request->country ?? '');
+        $user = $request->user();
+
+        $query = Store::select(
             'stores.id',
             'stores.store_name',
             'stores.city',
@@ -1607,93 +1672,92 @@ private function resolveCityServiceability(Request $request)
             'static_cities.cityName',
             'static_cities.fullRegionName'
         )
-        ->join('static_cities', 'stores.city', '=', 'static_cities.id')
-        ->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)]);
+            ->join('static_cities', 'stores.city', '=', 'static_cities.id')
+            ->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)]);
 
-    if ($country !== '') {
-        $query->whereRaw('LOWER(static_cities.countryName) = ?', [strtolower($country)]);
-    }
+        if ($country !== '') {
+            $query->whereRaw('LOWER(static_cities.countryName) = ?', [strtolower($country)]);
+        }
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | Agency / User filtering
     |--------------------------------------------------------------------------
     */
 
-    if ($user->UserType == 1) {
+        if ($user->UserType == 1) {
 
-        $query->where(
-            'stores.AgencyID',
-            $user->id
-        );
+            $query->where(
+                'stores.AgencyID',
+                $user->id
+            );
+        } else {
 
-    } else {
+            $query->where(
+                'stores.UserSysId',
+                $user->id
+            );
+        }
 
-        $query->where(
-            'stores.UserSysId',
-            $user->id
-        );
-    }
+        $matchedRow = $query->first();
 
-    $matchedRow = $query->first();
+        $isServiceable = (bool) $matchedRow;
+        $matchedStore = null;
+        $matchedCity = null;
 
-    $isServiceable = (bool) $matchedRow;
-    $matchedStore = null;
-    $matchedCity = null;
+        if ($matchedRow) {
+            $matchedStore = [
+                'id' => $matchedRow->id,
+                'store_name' => $matchedRow->store_name,
+                'city' => $matchedRow->city,
+            ];
+            $matchedCity = [
+                'id' => $matchedRow->matched_city_id,
+                'cityName' => $matchedRow->cityName,
+                'fullRegionName' => $matchedRow->fullRegionName,
+            ];
+        }
 
-    if ($matchedRow) {
-        $matchedStore = [
-            'id' => $matchedRow->id,
-            'store_name' => $matchedRow->store_name,
-            'city' => $matchedRow->city,
-        ];
-        $matchedCity = [
-            'id' => $matchedRow->matched_city_id,
-            'cityName' => $matchedRow->cityName,
-            'fullRegionName' => $matchedRow->fullRegionName,
-        ];
-    }
-
-    return response()->json([
-        'status' => [
-            'success' => true,
-            'httpStatus' => 200,
-        ],
-        'message' => $isServiceable
-            ? 'We currently provide service in ' . $city . '.'
-            : 'Currently we are not providing service at your location, please wait for us!',
-        'data' => [
-            'serviceable' => $isServiceable,
-            'city' => $city,
-            'store' => $matchedStore,
-            'matchedCity' => $matchedCity,
-            'cities' => [],
-        ],
-    ]);
-}
-
-private function searchServiceableCities(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'keyword' => 'nullable|string|max:191',
-        'limit' => 'nullable|integer|min:1|max:50',
-    ]);
-
-    if ($validator->fails()) {
         return response()->json([
             'status' => [
-                'success' => false,
-                'httpStatus' => 422,
+                'success' => true,
+                'httpStatus' => 200,
             ],
-            'message' => $validator->errors()->first(),
+            'message' => $isServiceable
+                ? 'We currently provide service in ' . $city . '.'
+                : 'Currently we are not providing service at your location, please wait for us!',
+            'data' => [
+                'serviceable' => $isServiceable,
+                'city' => $city,
+                'store' => $matchedStore,
+                'matchedCity' => $matchedCity,
+                'cities' => [],
+            ],
         ]);
     }
 
-    $keyword = trim($request->keyword ?? '');
-    $limit = (int) ($request->limit ?? 5);
-    $user = $request->user();
+    private function searchServiceableCities(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'keyword' => 'nullable|string|max:191',
+            'limit' => 'nullable|integer|min:1|max:50',
+        ]);
 
-    $query = Store::select(
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 422,
+                ],
+                'message' => $validator->errors()->first(),
+            ]);
+        }
+
+        $keyword = trim($request->keyword ?? '');
+        $limit = (int) ($request->limit ?? 5);
+        $user = $request->user();
+
+        $query = Store::select(
             'static_cities.id',
             'static_cities.cityName',
             'static_cities.fullRegionName',
@@ -1701,168 +1765,167 @@ private function searchServiceableCities(Request $request)
             'stores.store_name',
             'stores.address'
         )
-        ->join(
-            'static_cities',
-            'stores.city',
-            '=',
-            'static_cities.id'
-        );
+            ->join(
+                'static_cities',
+                'stores.city',
+                '=',
+                'static_cities.id'
+            );
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | Agency / User filtering
     |--------------------------------------------------------------------------
     */
 
-    if ($user->UserType == 1) {
+        if ($user->UserType == 1) {
 
-        $query->where(
-            'stores.AgencyID',
-            $user->id
-        );
+            $query->where(
+                'stores.AgencyID',
+                $user->id
+            );
+        } else {
 
-    } else {
+            $query->where(
+                'stores.UserSysId',
+                $user->id
+            );
+        }
 
-        $query->where(
-            'stores.UserSysId',
-            $user->id
-        );
-    }
+        if ($keyword !== '') {
+            $like = '%' . strtolower($keyword) . '%';
 
-    if ($keyword !== '') {
-        $like = '%' . strtolower($keyword) . '%';
-
-        $query->selectRaw(
-            "CASE
+            $query->selectRaw(
+                "CASE
                 WHEN LOWER(static_cities.cityName) LIKE ? THEN 'city'
                 WHEN LOWER(static_cities.fullRegionName) LIKE ? THEN 'region'
                 WHEN LOWER(stores.store_name) LIKE ? THEN 'store_name'
                 WHEN LOWER(stores.address) LIKE ? THEN 'address'
                 ELSE NULL
             END as matched_on",
-            [$like, $like, $like, $like]
-        );
+                [$like, $like, $like, $like]
+            );
 
-        $query->where(function ($q) use ($like) {
-            $q->whereRaw('LOWER(static_cities.cityName) LIKE ?', [$like])
-              ->orWhereRaw('LOWER(static_cities.fullRegionName) LIKE ?', [$like])
-              ->orWhereRaw('LOWER(stores.store_name) LIKE ?', [$like])
-              ->orWhereRaw('LOWER(stores.address) LIKE ?', [$like]);
-        });
-    }
-
-    $rows = $query
-        ->orderBy('static_cities.cityName')
-        ->limit($limit * 5)
-        ->get();
-
-    $priority = ['city' => 0, 'region' => 1, 'store_name' => 2, 'address' => 3];
-
-    $cities = $rows
-        ->groupBy('id')
-        ->map(function ($group) use ($priority, $keyword) {
-            $best = $keyword !== ''
-                ? $group->sortBy(fn ($row) => $priority[$row->matched_on] ?? 99)->first()
-                : $group->first();
-
-            return [
-                'id' => $best->id,
-                'cityName' => $best->cityName,
-                'fullRegionName' => $best->fullRegionName,
-                'matchedOn' => $best->matched_on ?? null,
-                'matchedStore' => in_array($best->matched_on ?? null, ['store_name', 'address'], true)
-                    ? [
-                        'id' => $best->store_id,
-                        'store_name' => $best->store_name,
-                        'address' => $best->address,
-                    ]
-                    : null,
-            ];
-        })
-        ->values()
-        ->take($limit);
-
-    return response()->json([
-        'status' => [
-            'success' => true,
-            'httpStatus' => 200,
-        ],
-        'message' => 'Serviceable cities fetched successfully.',
-        'data' => [
-            'serviceable' => null,
-            'cities' => $cities,
-        ],
-    ]);
-}
-
-//To fetch Rewards ,vouchers and store details per store id
-public function storeRewardVouchers(Request $request)
-{
-    try {
-        if ($request->isMethod('post')) {
-
-            $stores_id = (isset($request->stores_id) && $request->stores_id > 0) ? $request->stores_id : 0;
-
-            $rewardPerPage = (isset($request->reward_per_page) && $request->reward_per_page > 0) ? $request->reward_per_page : 25;
-            $rewardPage = (isset($request->reward_page) && $request->reward_page > 0) ? $request->reward_page : 1;
-
-            $voucherPerPage = (isset($request->voucher_per_page) && $request->voucher_per_page > 0) ? $request->voucher_per_page : 25;
-            $voucherPage = (isset($request->voucher_page) && $request->voucher_page > 0) ? $request->voucher_page : 1;
-
-            $user = $request->user();
-
-            if (!$stores_id) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 422,
-                    ],
-                    'message' => 'stores_id is required',
-                ]);
-            }
-
-            $post['stores_id'] = $stores_id;
-
-            $store = Store::select('stores.*', 'static_cities.cityName')
-                ->join('static_cities', 'stores.city', '=', 'static_cities.id')
-                ->with('images')
-                ->where('stores.id', $stores_id)
-                ->first();
-
-            $rewards = LoyaltyReward::getStoreRewardForStoreDetail($user, $rewardPerPage, $rewardPage, $post);
-            $vouchers = Vouchers::getActiveVouchersByStore($stores_id, $voucherPerPage, $voucherPage, $user);
-
-            if ($user && $store) {
-                return response()->json([
-                    'status' => [
-                        'success' => true,
-                        'httpStatus' => 200,
-                    ],
-                    'message' => 'Success',
-                    'data' => [
-                        'store' => $store,
-                        'rewards' => $rewards,
-                        'vouchers' => $vouchers,
-                    ],
-                ]);
-            } else {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 404,
-                    ],
-                    'message' => 'Store not found',
-                ]);
-            }
+            $query->where(function ($q) use ($like) {
+                $q->whereRaw('LOWER(static_cities.cityName) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(static_cities.fullRegionName) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(stores.store_name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(stores.address) LIKE ?', [$like]);
+            });
         }
-    } catch (\Throwable $th) {
+
+        $rows = $query
+            ->orderBy('static_cities.cityName')
+            ->limit($limit * 5)
+            ->get();
+
+        $priority = ['city' => 0, 'region' => 1, 'store_name' => 2, 'address' => 3];
+
+        $cities = $rows
+            ->groupBy('id')
+            ->map(function ($group) use ($priority, $keyword) {
+                $best = $keyword !== ''
+                    ? $group->sortBy(fn($row) => $priority[$row->matched_on] ?? 99)->first()
+                    : $group->first();
+
+                return [
+                    'id' => $best->id,
+                    'cityName' => $best->cityName,
+                    'fullRegionName' => $best->fullRegionName,
+                    'matchedOn' => $best->matched_on ?? null,
+                    'matchedStore' => in_array($best->matched_on ?? null, ['store_name', 'address'], true)
+                        ? [
+                            'id' => $best->store_id,
+                            'store_name' => $best->store_name,
+                            'address' => $best->address,
+                        ]
+                        : null,
+                ];
+            })
+            ->values()
+            ->take($limit);
+
         return response()->json([
             'status' => [
-                'success' => false,
-                'httpStatus' => 500,
+                'success' => true,
+                'httpStatus' => 200,
             ],
-            'message' => $th->getMessage(),
+            'message' => 'Serviceable cities fetched successfully.',
+            'data' => [
+                'serviceable' => null,
+                'cities' => $cities,
+            ],
         ]);
     }
-}
+
+    //To fetch Rewards ,vouchers and store details per store id
+    public function storeRewardVouchers(Request $request)
+    {
+        try {
+            if ($request->isMethod('post')) {
+
+                $stores_id = (isset($request->stores_id) && $request->stores_id > 0) ? $request->stores_id : 0;
+
+                $rewardPerPage = (isset($request->reward_per_page) && $request->reward_per_page > 0) ? $request->reward_per_page : 25;
+                $rewardPage = (isset($request->reward_page) && $request->reward_page > 0) ? $request->reward_page : 1;
+
+                $voucherPerPage = (isset($request->voucher_per_page) && $request->voucher_per_page > 0) ? $request->voucher_per_page : 25;
+                $voucherPage = (isset($request->voucher_page) && $request->voucher_page > 0) ? $request->voucher_page : 1;
+
+                $user = $request->user();
+
+                if (!$stores_id) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 422,
+                        ],
+                        'message' => 'stores_id is required',
+                    ]);
+                }
+
+                $post['stores_id'] = $stores_id;
+
+                $store = Store::select('stores.*', 'static_cities.cityName')
+                    ->join('static_cities', 'stores.city', '=', 'static_cities.id')
+                    ->with('images')
+                    ->where('stores.id', $stores_id)
+                    ->first();
+
+                $rewards = LoyaltyReward::getStoreRewardForStoreDetail($user, $rewardPerPage, $rewardPage, $post);
+                $vouchers = Vouchers::getActiveVouchersByStore($stores_id, $voucherPerPage, $voucherPage, $user);
+
+                if ($user && $store) {
+                    return response()->json([
+                        'status' => [
+                            'success' => true,
+                            'httpStatus' => 200,
+                        ],
+                        'message' => 'Success',
+                        'data' => [
+                            'store' => $store,
+                            'rewards' => $rewards,
+                            'vouchers' => $vouchers,
+                        ],
+                    ]);
+                } else {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 404,
+                        ],
+                        'message' => 'Store not found',
+                    ]);
+                }
+            }
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 500,
+                ],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
 }
