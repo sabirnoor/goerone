@@ -108,7 +108,7 @@ class MembershipController extends Controller
                 $validator = Validator::make($request->all(), [
                     'program_name' => [
                         'required','string','max:100',
-                        Rule::unique('loyalty_programs', 'program_name')->ignore($program_id, 'program_id'),
+                        Rule::unique('loyalty_program', 'program_name')->ignore($program_id, 'program_id'),
                     ],
                     'description' => 'nullable|string',
                     'terms_conditions' => 'nullable|string',
