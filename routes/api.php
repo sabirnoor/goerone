@@ -7,6 +7,7 @@ use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\VouchersController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Models\Service;
 use Illuminate\Http\Request;
@@ -99,7 +100,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/services', fn() => Service::where('status', 1)->get());
     });
 });
-
+Route::post('/country', [DashboardController::class, 'country'])->name('country');
+Route::post('/states', [DashboardController::class, 'states'])->name('states');
+Route::post('/cities', [DashboardController::class, 'cities'])->name('cities');
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');

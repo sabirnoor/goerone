@@ -2,19 +2,25 @@
 
 namespace App\Http\Controllers\API;
 
-use App\Helpers\Helper;
+use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\Controller;
+use App\Models\incorporation_details;
+use App\Models\Invoices;
+use App\Models\invoices_items;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyRedemption;
 use App\Models\LoyaltyReward;
 use App\Models\LoyaltyUserCard;
+use App\Models\mst_currency;
+use App\Models\mst_items;
+use App\Models\mst_markups;
 use App\Models\RewardEarn;
 use App\Models\Store;
 use App\Models\StoresMapping;
-use App\Models\Staticcities;
-use App\Models\User;
+use DateTime;
 use App\Models\Vouchers;
+use App\Models\WalletModel;
 use App\Services\OtpService;
 use App\Services\RewardService;
 use Carbon\Carbon;
@@ -50,7 +56,7 @@ class LoyaltyController extends Controller
         $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
 
         $validator = Validator::make($request->all(), [
-            'amount' => 'required|integer|min:1',
+            'order_amount' => 'required|integer|min:1',
             'membershipId' => 'nullable|integer||exists:loyalty_program,program_id',
             'reward_id' => [
                 'required',
@@ -92,367 +98,563 @@ class LoyaltyController extends Controller
         DB::beginTransaction();
         try {
             if (isset($request->membershipId) && $request->membershipId > 0) {
+                $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
                 $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
                     ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                     ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
                     ->where('user_card.status', 'active')->first();
                 $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
-                $post['cardNumbers'] = [];
-                $post['keyword'] = '';
-                $post['program_id'] = $request->membershipId ?? 0;
-                $UnAssignloyaltycard = LoyaltyCard::getUnAssignloyaltycardAuto($user, 25, $post);
-                $card_id = isset($UnAssignloyaltycard[0]['card_id']) ? $UnAssignloyaltycard[0]['card_id'] : 0;
-                $currentDate = Carbon::now()->format('Y-m-d H:i:s');
-                $twoMonthsLater = Carbon::now()->addMonths(12)->format('Y-m-d H:i:s');
-                if ($card_id == 0) {
-                    $card_number = generateCardNumber($user->AgencyID);
-                    $CreateNewcard = [
-                        'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
-                        'UserSysId' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
-                        "program_id" => $request->membershipId ?? 0,
-                        "status" => "active",
-                        "card_number" => $card_number,
-                        "card_type" => "premium",
-                        "issue_date" => $currentDate,
-                        "initial_points" => "0",
-                        "expiration_date" => $twoMonthsLater
-                    ];
-                    pr($CreateNewcard);
-                    die;
-                    $card_id = LoyaltyCard::insertGetId($CreateNewcard);
-                }
 
-                pr($card_id);
-                pr($checkUserCardExist);
-            }
+                if ($program_id === 0) {
+                    $post['cardNumbers'] = [];
+                    $post['keyword'] = '';
+                    $post['program_id'] = $request->membershipId ?? 0;
+                    $UnAssignloyaltycard = LoyaltyCard::getUnAssignloyaltycardAuto($user, 25, $post);
+                    $card_id = isset($UnAssignloyaltycard[0]['card_id']) ? $UnAssignloyaltycard[0]['card_id'] : 0;
+                    $currentDate = Carbon::now()->format('Y-m-d H:i:s');
+                    $twoMonthsLater = Carbon::now()->addMonths(12)->format('Y-m-d H:i:s');
+                    $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($LoyaltyProgram->membership_amount, 18);
+                    $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($LoyaltyProgram->membership_amount ?? 0));
 
-            die;
-        } catch (\Exception $e) {
-            DB::rollback();
-            return response()->json([
-                'status' => [
-                    'success' => true,
-                    'httpStatus' => 400,
-                ],
-                'message' => $e->getMessage(),
-            ], 400);
-        }
-        pr($request->all());
-        pr($user);
-        die;
-        if (empty($request->storeToken) && !empty($request->store_id)) {
-            $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
-            $token = $store->createToken('store-token')->plainTextToken;
-            $request->merge(['storeToken' => $token]);
-        }
+                    $TotalAmount = $TotalAmounts;
+                    $SubTotal = $LoyaltyProgram->membership_amount ?? 0;
+                    $DiscountSubTotal = $LoyaltyProgram->membership_amount ?? 0;
+                    $TotalTaxAmount = $arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] ?? 0;
+                    $ItemName = $LoyaltyProgram->program_name ?? 'Membership';
+                    $Itemid = 0;
+                    $mst_items = mst_items::where('name', 'like', '%' . $ItemName . '%')->where(function ($q) use ($AgencyID) {
+                        $q->whereNull('AgencyID')
+                            ->orWhere('AgencyID', $AgencyID);
+                    })->first();
 
-        $accessToken = PersonalAccessToken::findToken($request->storeToken);
-        if (!$accessToken) {
-            return response()->json([
-                'status' => [
-                    'success' => false,
-                    'httpStatus' => 401,
-                ],
-                'message' => 'Unauthorized Store'
-            ]);
-        }
-        $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
-        $UserSysId = $request->user()->id;
-        $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
-        $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
-        $rewardtype = isset($Reward->rewardtype) ? $Reward->rewardtype : 0;
-        $ordervalue = isset($Reward->ordervalue) ? $Reward->ordervalue : 0;
-        $rewardvalue = isset($Reward->rewardvalue) ? $Reward->rewardvalue : 0;
-        $dealvalue = isset($Reward->dealvalue) ? $Reward->dealvalue : 0;
-        $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
-        $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
-        if ($dealtype === 0) {
-            $discount = (($request->order_amount * (float)$dealvalue) / 100);
-            $discountOwner = (($request->order_amount * (float)$ownervalue) / 100);
-            $discountCust = (($request->order_amount * (float)$custvalue) / 100);
-        } else {
-            $discount = $dealvalue;
-            $discountOwner = $ownervalue;
-            $discountCust = $custvalue;
-        }
-
-        if ($rewardtype === 0 && !($request->order_amount < $ordervalue)) {
-            $rewardEarns = (($request->order_amount * (float)$rewardvalue) / 100);
-        } elseif ($rewardtype === 1 && !($request->order_amount < $ordervalue)) {
-            $rewardEarns = $rewardvalue;
-        } else {
-            $rewardEarns = 0;
-        }
-        $request->merge(['discount' => $discount]);
-
-        $accessToken->load(['tokenable' => function ($query) {
-            $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired'); // Add store fields
-        }]);
-        $storeData = $accessToken->tokenable;
-        $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $request->user_id]);
-
-        $availablereward = isset($TotalRewardEarning->total_rewardearn) ? (float)$TotalRewardEarning->total_rewardearn : 0;
-        $rewardrequired = isset($storeData->rewardrequired) ? (float)$storeData->rewardrequired : 0;
-
-        if ($storeData && $storeData->vendortype == 1) {
-            $eventDate = Carbon::parse($storeData->event_date);
-            $today = Carbon::today();
-            if ($eventDate->lt($today)) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "This event has already expired"
-                ]);
-            }
-            $TotalReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('stores_id', $accessToken->tokenable_id)->count();
-            $Isredeem = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->count();
-            if ($TotalReddemPass >= $storeData->noOfPass) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "No more pass available"
-                ]);
-            }
-            if ($Isredeem > 0) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "The pass you already swiped for (or downloaded) has been successfully saved. Please check your Pass History to view and use it."
-                ]);
-            }
-
-            if ($availablereward < $rewardrequired) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "Insufficient reward balance : to redeem this required at least " . $rewardrequired . " reward points"
-                ]);
-            }
-        }
-
-        if ($storeData && $storeData->swipelimit == 1) {
-            $todayCount = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->whereDate('redemption_date', Carbon::today())->count();
-            $yearCount = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->whereYear('redemption_date', Carbon::now()->year)->count();
-            $TotalUsed = ($todayCount + $yearCount);
-            if ($storeData->vendortype == 1 && $TotalUsed >= $storeData->noOfPass) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "No more pass available"
-                ]);
-            }
-            if (($todayCount >= $storeData->monthlyswipe) || ($yearCount >= $storeData->monthlyswipe)) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 403,
-                    ],
-                    'message' => "We have detected that your limit has exceeded the maximum allowed number of swipes/transactions at this store/events"
-                ]);
-            }
-        }
-        // pr($storeData);
-        // die;
-
-        if ($storeData && $storeData->OTPAllowed == 1) {
-            $otp = !empty($request->otp) ? $request->otp : 0;
-            $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
-        } else {
-            $verified = true;
-        }
-
-        if ($verified) {
-            $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
-            $stores_id = !empty($accessToken->tokenable_id) ? $accessToken->tokenable_id : 0;
-
-            if ($checkReward && $accessToken && $stores_id > 0) {
-                // Verify the card belongs to the user
-                $cardExists = DB::table('user_card')
-                    ->where(function ($query) use ($user) {
-                        if ($user->UserType == 1) {
-                            $query->where('user_card.AgencyID', $user->id);
-                        } else {
-                            $query->where('user_card.UserSysId', $user->id);
+                    if ($TotalAmount > 0) {
+                        $wallet = [
+                            "customer_id" => $user->id,
+                            "amount" => $TotalAmount,
+                            "RefrenceNo" => isset($request->RefrenceNo) ? $request->RefrenceNo : date('YmdHis'),
+                            "PlanType" => 4,
+                            "Remark" => "VIP Membership",
+                            'PaymentMode' => $ItemName
+                        ];
+                        $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
+                        $currentDate = Carbon::now()->format('Y-m-d H:i:s');
+                        Storage::disk('public')->put('logs/membership/' . $currentDate . '_walletDebit.json', json_encode($WalletBook));
+                        $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
+                        $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
+                        if ($status == 0) {
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 1015,
+                                ],
+                                'message' => $message,
+                            ]);
                         }
-                    })->where('user_id', $request->user_id)->where('user_card.status', 'active')->where('card_id', $request->card_id)->exists();
-                if (!$cardExists) {
+                    }
+
+                    if ($card_id == 0) {
+                        $card_number = generateCardNumber($user->AgencyID);
+                        $CreateNewcard = [
+                            'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                            'UserSysId' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                            "program_id" => $request->membershipId ?? 0,
+                            "status" => "active",
+                            "card_number" => $card_number,
+                            "card_type" => "premium",
+                            "issue_date" => $currentDate,
+                            "initial_points" => "0",
+                            "expiration_date" => $twoMonthsLater
+                        ];
+                        $card_id = LoyaltyCard::insertGetId($CreateNewcard);
+                    }
+                    $cardDetails = LoyaltyCard::getcardDetails($user, $card_id);
+                    $card_number = LoyaltyUserCard::createUniqueCardNumber($user);
+
+                    $MasterCardNo = (str_replace(' ', '', ($cardDetails->card_number)));
+
+                    $CreateData = [
+                        'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                        'UserSysId' => $request->user()->id,
+                        'user_id' => $user->id,
+                        'card_id' => $card_id,
+                        'points_balance' => 0,
+                        'status' => 'active',
+                        'card_number' => $MasterCardNo,
+                        // 'card_number' => $MasterCardNo . $card_number['card_no'],
+                        'card_no' => $card_number['card_no'],
+                        'is_primary_card' => true,
+                        'notes' => 'Auto Assign',
+                        'activation_date' => $currentDate,
+                        'deactivation_date' => $twoMonthsLater
+                    ];
+                    if (empty($mst_items)) {
+                        $Insert = array(
+                            'AgencyID' => $AgencyID,
+                            'UserSysId' => $request->user()->id,
+                            'types' => 1,
+                            'name' => $ItemName,
+                            'HSNCode' => 998599,
+                            'TaxPreference' => 1,
+                            'SellingPrice' => $SubTotal,
+                            'Description' => 'GoerOne Membership ' . $ItemName,
+                            'taxrate' => 18,
+                            'active' => 1,
+                            'created_at' => date('Y-m-d H:i:s'),
+                            'updated_at' => date('Y-m-d H:i:s'),
+                        );
+                        $Itemid = mst_items::insertGetId($Insert);
+                    } else {
+                        $Itemid = $mst_items->id ?? 0;
+                    }
+                    $currentDateTime = new DateTime('now');
+                    $currentDate = $currentDateTime->format('Y-m-d');
+                    $currentDateNote = $currentDateTime->format('d/m/Y');
+                    $InvoiceNo = Invoices::generateInvoiceNo(($user->UserType == 1) ? $user->id : $user->AgencyID);
+                    $notes = 'Dear Customer,<br>
+                        I hope this message finds you well.<br><br>
+                        This is a friendly reminder to request that the payment for invoice ' . $InvoiceNo . ' be made before the due date of ' . $currentDateNote . '. Prompt payment would be greatly appreciated and will help us continue providing you with excellent service.<br><br>
+                        Please let us know if you have any questions or if there are any issues we can assist with.  <br><br>
+                        Thank you for your attention to this matter.';
+
+                    $mst_currency = mst_currency::where("name", "LIKE", "%" . trim(($request->currency ?? 'INR')) . "%")->first();
+                    $checkMarkup = mst_markups::where('AgencyID', $user->AgencyID)->where('parent_id', 0)
+                        ->where('upgrade_vip', 1)->first();
+
+                    $InvoiceInsert['AgencyID'] = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+                    $InvoiceInsert['UserSysId'] = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+                    $InvoiceInsert['customer_id'] = $user->id;
+                    $InvoiceInsert['TPSystemID'] = 0;
+                    $InvoiceInsert['DueOnReceipt'] = 0;
+                    $InvoiceInsert['InvoiceCurrency'] = (isset($mst_currency->id) && !empty($mst_currency->id)) ? $mst_currency->id : 1;
+                    $InvoiceInsert['tdstcsApplied'] = 0;
+                    $InvoiceInsert['invoiceNo'] = $InvoiceNo;
+                    $InvoiceInsert['SupplierState'] = !empty($request->user()->details->mst_state_id) ? $request->user()->details->mst_state_id : 0;
+                    $InvoiceInsert['InvoiceDueDate'] = date('Y-m-d H:i:s');
+                    $InvoiceInsert['InvoiceDate'] = date('Y-m-d');
+                    $InvoiceInsert['TotalTds'] = 0;
+                    $InvoiceInsert['tds_taxes'] = 0;
+                    $InvoiceInsert['tdstaxid'] = 0;
+                    $InvoiceInsert['Notes'] = $notes;
+                    $InvoiceInsert['TermsCondition'] = '';
+                    $InvoiceInsert['discount'] = 0; //isset($data['discount']) ? $data['discount'] : 0;
+                    $InvoiceInsert['TotalDiscount'] = 0; //isset($IntTotalDiscount) ? $IntTotalDiscount : 0;
+                    $InvoiceInsert['SubTotal'] = isset($SubTotal) ? $SubTotal : 0;
+                    $InvoiceInsert['TotalTaxAmount'] = isset($TotalTaxAmount) ? $TotalTaxAmount : 0;
+                    $InvoiceInsert['TotalAmount'] = isset($TotalAmount) ? ($TotalAmount) : 0;
+                    $InvoiceInsert['TotalAmountRec'] = $TotalAmount;
+                    $InvoiceInsert['DiscountSubTotal'] = isset($DiscountSubTotal) ? $DiscountSubTotal : 0;
+                    $InvoiceInsert['TaxTypeobj'] = json_encode(['18' => $TotalTaxAmount]);
+                    $InvoiceInsert['status'] = 1;
+                    $InvoiceInsert['PlanType'] = 4;
+
+                    $InvoiceInsert['created_at'] = date('Y-m-d H:i:s');
+                    $InvoiceInsert['updated_at'] = date('Y-m-d H:i:s');
+
+                    $ItemInsert[0]['ItemName'] = $ItemName;
+                    $ItemInsert[0]['Quantity'] = 1;
+                    $ItemInsert[0]['Rate'] = $SubTotal;
+                    $ItemInsert[0]['TaxType'] = 18;
+                    $ItemInsert[0]['Amount'] = $SubTotal;
+                    $ItemInsert[0]['TaxAmount'] = $TotalTaxAmount;
+                    $ItemInsert[0]['TotalDiscount'] = 0;
+                    $ItemInsert[0]['discount'] = 0;
+                    $ItemInsert[0]['discountedAmount'] = $SubTotal;
+                    $ItemInsert[0]['Itemid'] = $Itemid;
+                    $ItemInsert[0]['created_at'] = date('Y-m-d H:i:s');
+                    $ItemInsert[0]['updated_at'] = date('Y-m-d H:i:s');
+
+                    $invoice_id = Invoices::insertGetId($InvoiceInsert);
+
+                    foreach ($ItemInsert as $key => $rowss) {
+                        $Inset = $rowss;
+                        $Inset['invoice_id'] = $invoice_id;
+                        invoices_items::insertGetId($Inset);
+                    }
+
+                    $checkExist = LoyaltyUserCard::where('AgencyID', $user->AgencyID)
+                        ->where('user_id', $user->id)->where('card_id', $card_id)->first();
+                    if (empty($checkExist)) {
+                        LoyaltyUserCard::where('AgencyID', $user->AgencyID)->where('user_id', $user->id)->update(['status' => 'inactive']);
+                        $AddCard = LoyaltyUserCard::insertGetId($CreateData);
+                    }
+
+                    $updateData['MarketPlaceID'] = (isset($checkMarkup->id) && $checkMarkup->id > 0) ? $checkMarkup->id : 0;
+                    $updateData['VIPPaymentStatus'] = 1;
+                    $updateData['VIPAgency'] = 1;
+                    $updateData['updated_at'] = date('Y-m-d H:i:s');
+                    incorporation_details::where('UserSysId', $user->id)->where('AgencyID', $request->user()->AgencyID)->update($updateData);
+                    $referral_earning = isset($user->details->referralUser->referral_earning) ? $user->details->referralUser->referral_earning : 0;
+                    if (!empty($user->details->referral_user_id) && $user->details->referral_user_id > 0 && $referral_earning > 0) {
+                        $walletInsert = [
+                            "payer_id" => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                            "payee_id" => $user->details->referral_user_id,
+                            "points" => round($referral_earning, 2),
+                            "RewardMode" => "Earn",
+                            "description" => "Referral Earning",
+                            "currency" => "INR"
+                        ];
+                        $walletInsert['AgencyID'] = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
+                        $walletInsert['UserSysId'] = $request->user()->id;
+                        $walletInsert['PlanType'] = 7;
+                        $this->rewardService->addPoints($walletInsert);
+                    }
+                } else {
+                    $card_id = $checkUserCardExist->card_id;
+                }
+                pr($card_id);
+            }
+            if (empty($request->storeToken) && !empty($request->store_id)) {
+                $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
+                // $token = $store->createToken('store-token')->plainTextToken;
+                // $request->merge(['storeToken' => $token]);
+                $request->merge(['storeToken' => '131|6q2oe0Ok0LHJlu50FTVEeFcUCqu0rzzJeuJMd3nfc9533c6d']);
+            }
+
+            $accessToken = PersonalAccessToken::findToken($request->storeToken);
+            if (!$accessToken) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 401,
+                    ],
+                    'message' => 'Unauthorized Store'
+                ]);
+            }
+
+            $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+            $UserSysId = $request->user()->id;
+            $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
+            $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
+            $rewardtype = isset($Reward->rewardtype) ? $Reward->rewardtype : 0;
+            $ordervalue = isset($Reward->ordervalue) ? $Reward->ordervalue : 0;
+            $rewardvalue = isset($Reward->rewardvalue) ? $Reward->rewardvalue : 0;
+            $dealvalue = isset($Reward->dealvalue) ? $Reward->dealvalue : 0;
+            $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
+            $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
+            $max_reward_value = isset($Reward->max_reward_value) ? $Reward->max_reward_value : 0;
+            $maxdiscountvalue = isset($Reward->maxdiscountvalue) ? $Reward->maxdiscountvalue : 0;
+            if ($dealtype === 0 && !($request->order_amount < $ordervalue)) {
+                $discount = (($request->order_amount * (float)$dealvalue) / 100);
+                $discountOwner = (($request->order_amount * (float)$ownervalue) / 100);
+                $discountCust = (($request->order_amount * (float)$custvalue) / 100);
+            } else if (!($request->order_amount < $ordervalue)) {
+                $discount = $dealvalue;
+                $discountOwner = $ownervalue;
+                $discountCust = $custvalue;
+            } else {
+                $discount = 0;
+                $discountOwner = 0;
+                $discountCust = 0;
+            }
+
+            if ($rewardtype === 0 && !($request->order_amount < $ordervalue)) {
+                $rewardEarns = (($request->order_amount * (float)$rewardvalue) / 100);
+            } elseif ($rewardtype === 1 && !($request->order_amount < $ordervalue)) {
+                $rewardEarns = $rewardvalue;
+            } else {
+                $rewardEarns = 0;
+            }
+            if ($rewardEarns > $max_reward_value) {
+                $rewardEarns = $max_reward_value;
+            }
+            if ($discount > $maxdiscountvalue) {
+                $discount = $maxdiscountvalue;
+                $discountOwner = (($maxdiscountvalue * (float)$ownervalue) / 100);
+                $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
+            }
+            $request->merge(['discount' => $discount]);
+            $request->merge(['user_id' => $request->user()->id]);
+            $accessToken->load(['tokenable' => function ($query) {
+                $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired'); // Add store fields
+            }]);
+            $storeData = $accessToken->tokenable;
+            $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $request->user_id]);
+
+            $availablereward = isset($TotalRewardEarning->total_rewardearn) ? (float)$TotalRewardEarning->total_rewardearn : 0;
+            $rewardrequired = isset($storeData->rewardrequired) ? (float)$storeData->rewardrequired : 0;
+
+            if ($storeData && $storeData->vendortype == 1) {
+                $eventDate = Carbon::parse($storeData->event_date);
+                $today = Carbon::today();
+                if ($eventDate->lt($today)) {
                     return response()->json([
                         'status' => [
                             'success' => false,
                             'httpStatus' => 403,
                         ],
-                        'message' => 'The specified card does not belong to this user'
+                        'message' => "This event has already expired"
                     ]);
                 }
-                // pr($request->all());
-                // pr($rewardEarns);
-                // pr($discountCust);
-                // pr($stores_id);
-                // die;
+                $TotalReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('stores_id', $accessToken->tokenable_id)->count();
+                $Isredeem = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->count();
 
-                try {
-                    $limit = 12;
-                    $redem_id = 0;
-                    for ($i = 0; $i < $limit; $i++) {
-                        $redem_id .= mt_rand(0, 9);
-                    }
-                    $uploadPath = public_path('uploads/redemption/' . $AgencyID . '/' . $stores_id . '/receipt');
-
-                    // ✅ Create folder if not exists
-                    if (!File::exists($uploadPath)) {
-                        File::makeDirectory($uploadPath, 0755, true);
-                    }
-                    // ✅ Check & upload file
-                    if ($request->hasFile('receipt')) {
-                        $file = $request->file('receipt');
-                        // Generate unique file name
-                        $fileName = 'receipt_' . time() . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
-                        // Move file
-                        $file->move($uploadPath, $fileName);
-                        // Save path in DB (relative path recommended)
-                        $receipt = url('uploads/redemption/' . $AgencyID . '/' . $stores_id . '/receipt/' . $fileName);
-                    } else {
-                        $receipt = null; // optional
-                    }
-                    // Call the stored procedure
-                    $results = DB::select(
-                        'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message)',
-                        [
-                            $request->user_id,
-                            $request->card_id,
-                            $request->reward_id,
-                            $AgencyID,
-                            $UserSysId,
-                            !empty($request->discount) ? $request->discount : 0,
-                            !empty($request->order_amount) ? $request->order_amount : 0,
-                            $stores_id,
-                            !empty($discountOwner) ? $discountOwner : 0,
-                            !empty($discountCust) ? $discountCust : 0,
-                            !empty($redem_id) ? 'GTR' . $redem_id : 0,
-                            !empty($receipt) ? $receipt : null,
-                        ]
-                    );
-
-                    // Get the output parameters
-                    $results = DB::select('SELECT @status as status, @message as message');
-                    $status = $results[0]->status;
-                    $message = $results[0]->message;
-
-                    if ($status === 'SUCCESS') {
-                        if ($storeData && $storeData->vendortype == 1) {
-                            // $users = User::where('AgencyID', $AgencyID)->where('id', $request->user_id)->where('active', 1)->first();
-                            // $RewardRequest = [
-                            //     "points_to_redeem" => ($rewardrequired),
-                            //     "notes" => 'Event Pass - ' . $storeData->store_name,
-                            // ];
-                            // $redemption = Helper::rewardRedemption($users, $RewardRequest);
-                            // Helper::rewardprocessRedemption($redemption);
-
-                            $RewardRedeem = [
-                                "points" => ceil($rewardrequired),
-                                "description" => 'Event Pass - ' . $storeData->store_name,
-                                'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
-                                'UserSysId' =>  $request->user()->id,
-                                "payer_id" => $request->user_id,
-                                "payee_id" => $AgencyID,
-                                "RewardMode" => "Pay",
-                                'PlanType' => 5,
-                            ];
-                            $redemption = $this->rewardService->transferPoints($RewardRedeem);
-                        }
-
-                        if ($rewardEarns > 0) {
-                            $RewardInsert = [
-                                'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
-                                'UserSysId' =>  $request->user()->id,
-                                "payer_id" => $AgencyID,
-                                "payee_id" => $request->user_id,
-                                "points" => $rewardEarns,
-                                "RewardMode" => "Earn",
-                                'PlanType' => 5,
-                                'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
-                            ];
-                            $this->rewardService->addPoints($RewardInsert);
-                            // $result = DB::select(
-                            //     'CALL InsertRewardEarn(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            //     [
-                            //         $request->user_id,
-                            //         $request->card_id,
-                            //         $request->reward_id,
-                            //         $AgencyID,
-                            //         $UserSysId,
-                            //         $rewardtype,
-                            //         $request->order_amount,
-                            //         $rewardEarns,
-                            //         $request->input('created_at', null),
-                            //         $request->input('updated_at', null)
-                            //     ]
-                            // );
-                        }
-
-                        return response()->json([
-                            'status' => [
-                                'success' => true,
-                                'httpStatus' => 200,
-                            ],
-                            'message' => $message,
-                            'data' => [
-                                'user_id' => $request->user_id,
-                                'card_id' => $request->card_id,
-                                'reward_id' => $request->reward_id,
-                                'StoreId' => $stores_id
-                            ]
-                        ], 200);
-                    } else {
-                        return response()->json([
-                            'status' => [
-                                'success' => false,
-                                'httpStatus' => 400,
-                            ],
-                            'message' => $message
-                        ]);
-                    }
-                } catch (\Exception $e) {
+                if ($TotalReddemPass >= $storeData->noOfPass) {
                     return response()->json([
                         'status' => [
                             'success' => false,
-                            'httpStatus' => 500,
+                            'httpStatus' => 403,
                         ],
-                        'message' => 'Redemption processing failed',
-                        'error' => $e->getMessage()
+                        'message' => "No more pass available"
+                    ]);
+                }
+                if ($Isredeem > 0) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 403,
+                        ],
+                        'message' => "The pass you already swiped for (or downloaded) has been successfully saved. Please check your Pass History to view and use it."
+                    ]);
+                }
+
+                if ($availablereward < $rewardrequired) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 403,
+                        ],
+                        'message' => "Insufficient reward balance : to redeem this required at least " . $rewardrequired . " reward points"
+                    ]);
+                }
+            }
+
+            if ($storeData && $storeData->swipelimit == 1) {
+                $todayCount = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->whereDate('redemption_date', Carbon::today())->count();
+                $yearCount = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('user_id', $request->user_id)->where('stores_id', $accessToken->tokenable_id)->whereYear('redemption_date', Carbon::now()->year)->count();
+                $TotalUsed = ($todayCount + $yearCount);
+                if ($storeData->vendortype == 1 && $TotalUsed >= $storeData->noOfPass) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 403,
+                        ],
+                        'message' => "No more pass available"
+                    ]);
+                }
+                if (($todayCount >= $storeData->monthlyswipe) || ($yearCount >= $storeData->monthlyswipe)) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 403,
+                        ],
+                        'message' => "We have detected that your limit has exceeded the maximum allowed number of swipes/transactions at this store/events"
+                    ]);
+                }
+            }
+            pr($storeData);
+            die('ddddddddd');
+            DB::commit();
+            if ($storeData && $storeData->OTPAllowed == 1) {
+                $otp = !empty($request->otp) ? $request->otp : 0;
+                $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
+            } else {
+                $verified = true;
+            }
+
+            if ($verified) {
+                $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
+                $stores_id = !empty($accessToken->tokenable_id) ? $accessToken->tokenable_id : 0;
+
+                if ($checkReward && $accessToken && $stores_id > 0) {
+                    // Verify the card belongs to the user
+                    $cardExists = DB::table('user_card')
+                        ->where(function ($query) use ($user) {
+                            if ($user->UserType == 1) {
+                                $query->where('user_card.AgencyID', $user->id);
+                            } else {
+                                $query->where('user_card.UserSysId', $user->id);
+                            }
+                        })->where('user_id', $request->user_id)->where('user_card.status', 'active')->where('card_id', $request->card_id)->exists();
+                    if (!$cardExists) {
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 403,
+                            ],
+                            'message' => 'The specified card does not belong to this user'
+                        ]);
+                    }
+                    // pr($request->all());
+                    // pr($rewardEarns);
+                    // pr($discountCust);
+                    // pr($stores_id);
+                    // die;
+
+                    try {
+                        $limit = 12;
+                        $redem_id = 0;
+                        for ($i = 0; $i < $limit; $i++) {
+                            $redem_id .= mt_rand(0, 9);
+                        }
+                        $uploadPath = public_path('uploads/redemption/' . $AgencyID . '/' . $stores_id . '/receipt');
+
+                        // ✅ Create folder if not exists
+                        if (!File::exists($uploadPath)) {
+                            File::makeDirectory($uploadPath, 0755, true);
+                        }
+                        // ✅ Check & upload file
+                        if ($request->hasFile('receipt')) {
+                            $file = $request->file('receipt');
+                            // Generate unique file name
+                            $fileName = 'receipt_' . time() . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+                            // Move file
+                            $file->move($uploadPath, $fileName);
+                            // Save path in DB (relative path recommended)
+                            $receipt = url('uploads/redemption/' . $AgencyID . '/' . $stores_id . '/receipt/' . $fileName);
+                        } else {
+                            $receipt = null; // optional
+                        }
+                        // Call the stored procedure
+                        $results = DB::select(
+                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message)',
+                            [
+                                $request->user_id,
+                                $request->card_id,
+                                $request->reward_id,
+                                $AgencyID,
+                                $UserSysId,
+                                !empty($request->discount) ? $request->discount : 0,
+                                !empty($request->order_amount) ? $request->order_amount : 0,
+                                $stores_id,
+                                !empty($discountOwner) ? $discountOwner : 0,
+                                !empty($discountCust) ? $discountCust : 0,
+                                !empty($redem_id) ? 'GTR' . $redem_id : 0,
+                                !empty($receipt) ? $receipt : null,
+                            ]
+                        );
+
+                        // Get the output parameters
+                        $results = DB::select('SELECT @status as status, @message as message');
+                        $status = $results[0]->status;
+                        $message = $results[0]->message;
+
+                        if ($status === 'SUCCESS') {
+                            if ($storeData && $storeData->vendortype == 1) {
+                                // $users = User::where('AgencyID', $AgencyID)->where('id', $request->user_id)->where('active', 1)->first();
+                                // $RewardRequest = [
+                                //     "points_to_redeem" => ($rewardrequired),
+                                //     "notes" => 'Event Pass - ' . $storeData->store_name,
+                                // ];
+                                // $redemption = Helper::rewardRedemption($users, $RewardRequest);
+                                // Helper::rewardprocessRedemption($redemption);
+
+                                $RewardRedeem = [
+                                    "points" => ceil($rewardrequired),
+                                    "description" => 'Event Pass - ' . $storeData->store_name,
+                                    'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                                    'UserSysId' =>  $request->user()->id,
+                                    "payer_id" => $request->user_id,
+                                    "payee_id" => $AgencyID,
+                                    "RewardMode" => "Pay",
+                                    'PlanType' => 5,
+                                ];
+                                $redemption = $this->rewardService->transferPoints($RewardRedeem);
+                            }
+
+                            if ($rewardEarns > 0) {
+                                $RewardInsert = [
+                                    'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                                    'UserSysId' =>  $request->user()->id,
+                                    "payer_id" => $AgencyID,
+                                    "payee_id" => $request->user_id,
+                                    "points" => $rewardEarns,
+                                    "RewardMode" => "Earn",
+                                    'PlanType' => 5,
+                                    'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
+                                ];
+                                $this->rewardService->addPoints($RewardInsert);
+                                // $result = DB::select(
+                                //     'CALL InsertRewardEarn(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                                //     [
+                                //         $request->user_id,
+                                //         $request->card_id,
+                                //         $request->reward_id,
+                                //         $AgencyID,
+                                //         $UserSysId,
+                                //         $rewardtype,
+                                //         $request->order_amount,
+                                //         $rewardEarns,
+                                //         $request->input('created_at', null),
+                                //         $request->input('updated_at', null)
+                                //     ]
+                                // );
+                            }
+
+                            return response()->json([
+                                'status' => [
+                                    'success' => true,
+                                    'httpStatus' => 200,
+                                ],
+                                'message' => $message,
+                                'data' => [
+                                    'user_id' => $request->user_id,
+                                    'card_id' => $request->card_id,
+                                    'reward_id' => $request->reward_id,
+                                    'StoreId' => $stores_id
+                                ]
+                            ], 200);
+                        } else {
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 400,
+                                ],
+                                'message' => $message
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 500,
+                            ],
+                            'message' => 'Redemption processing failed',
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                } else {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 202,
+                        ],
+                        'message' => 'This reward is currently unavailable in your store'
                     ]);
                 }
             } else {
                 return response()->json([
                     'status' => [
                         'success' => false,
-                        'httpStatus' => 202,
+                        'httpStatus' => 400,
                     ],
-                    'message' => 'This reward is currently unavailable in your store'
+                    'message' => 'Invalid OTP or mobile number',
                 ]);
             }
-        } else {
+        } catch (\Exception $e) {
+            DB::rollback();
             return response()->json([
                 'status' => [
-                    'success' => false,
-                    'httpStatus' => 400,
+                    'success' => true,
+                    'httpStatus' => 500,
                 ],
-                'message' => 'Invalid OTP or mobile number',
-            ]);
+                'message' => $e->getMessage(),
+            ], 400);
         }
     }
 
-
+    public function calculateServiceTax($intAmount, $percentAgencySTax)
+    {
+        $intAmount = (float) $intAmount;
+        $intNetSTax = (($intAmount * (float)$percentAgencySTax) / 100);
+        $BasePriceWithSTax = $intNetSTax + $intAmount;
+        $arrSerciceTax = array(
+            "BasePrice" => $intAmount,
+            "serviceTaxAmount" => $intNetSTax,
+            "BasePriceWithSTax" => $BasePriceWithSTax,
+            "ServiceTaxPercentage" => $percentAgencySTax,
+        );
+        return $arrSerciceTax;
+    }
     public function loyaltyCard(Request $request)
     {
         try {
