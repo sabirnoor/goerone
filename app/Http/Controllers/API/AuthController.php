@@ -23,7 +23,6 @@ use App\Models\LoyaltyUserCard;
 use App\Models\Store;
 use App\Models\userDevices;
 use App\Models\WalletModel;
-use App\Models\WebsiteSetting;
 use App\Services\AgentBnplService;
 use App\Services\EmailService;
 
@@ -135,17 +134,17 @@ class AuthController extends Controller
                 $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
                 $is_mobile = (int)$request->is_mobile ?? 0;
                 $leadsource = (int)$request->leadsource ?? 12;
-                $websiteSettings = WebsiteSetting::where('AgencyID', $AgencyID)->first();
-                $data = [
-                    'websiteSettings' => $websiteSettings,
-                    'user' => $request->user(),
-                    'post' => $request->all(),
-                ];
-                $body = view('emails.register', $data)->render();
+                // $websiteSettings = WebsiteSetting::where('AgencyID', $AgencyID)->first();
+                // $data = [
+                //     'websiteSettings' => $websiteSettings,
+                //     'user' => $request->user(),
+                //     'post' => $request->all(),
+                // ];
+                // $body = view('emails.register', $data)->render();
                 //echo $body;
                 //die;
-                $subject = 'Welcome to ' . $request->user()->name ?? '';
-                $ipAddress = $request->ip();
+                // $subject = 'Welcome to ' . $request->user()->name ?? '';
+                // $ipAddress = $request->ip();
                 if ($request->boolean('isgooglelogin')) {
                     // Check if email already exists
                     $user = User::where('AgencyID', $AgencyID)->where('email', $request->email)->whereIn('UserType', [0, 2])->first();
@@ -247,13 +246,13 @@ class AuthController extends Controller
                         'address' => $user->address,
                         'user' => User::find($insertGetId),
                     ];
-                    $this->emailService->sendEmail(
-                        $request->user(),
-                        $user->email,
-                        $subject,
-                        $body,
-                        $ipAddress
-                    );
+                    // $this->emailService->sendEmail(
+                    //     $request->user(),
+                    //     $user->email,
+                    //     $subject,
+                    //     $body,
+                    //     $ipAddress
+                    // );
                     return response()->json([
                         'status' => true,
                         'httpStatus' => 200,
@@ -345,13 +344,13 @@ class AuthController extends Controller
                 // $to = $phoneNumber; // recipient number
                 // $message = "Your OTP for user validation is " . $OTPS . ".  \nValid for 5 minutes. Do not share it with anyone.\n" . $signature . "\n";
                 // $response = $this->twilio->sendSms($to, $message);
-                $this->emailService->sendEmail(
-                    $request->user(),
-                    $user->email,
-                    $subject,
-                    $body,
-                    $ipAddress
-                );
+                // $this->emailService->sendEmail(
+                //     $request->user(),
+                //     $user->email,
+                //     $subject,
+                //     $body,
+                //     $ipAddress
+                // );
                 return response()->json([
                     'status' => true,
                     'httpStatus' => 200,
