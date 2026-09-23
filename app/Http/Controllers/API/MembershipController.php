@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LoyaltyProgram;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-
+use Illuminate\Validation\Rule;
 /**
  * Master CRUD for Memberships.
  *
@@ -101,8 +101,15 @@ class MembershipController extends Controller
             if ($request->isMethod('post')) {
                 $user = $request->user();
 
+                $program_id = (isset($request->program_id) && $request->program_id > 0)
+                ? $request->program_id
+                : 0;
+
                 $validator = Validator::make($request->all(), [
-                    'program_name' => 'required|max:100',
+                    'program_name' => [
+                        'required','string','max:100',
+                        Rule::unique('loyalty_program', 'program_name')->ignore($program_id, 'program_id'),
+                    ],
                     'description' => 'nullable|string',
                     'terms_conditions' => 'nullable|string',
                     'is_active' => 'nullable|boolean',
