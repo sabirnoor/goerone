@@ -278,3 +278,161 @@ function generateCardNumber($userId)
 
     return $formattedNumber;
 }
+
+function getDateFormate($date)
+{
+    $dateExp = explode('/', $date);
+    return $dateExp[2] . '-' . $dateExp[1] . '-' . $dateExp[0];
+}
+
+function encrypts($data = '', $key = NULL, $salt = "")
+{
+    if ($key != NULL && $data != "" && $salt != "") {
+
+        $method = "AES-256-CBC";
+
+        //Converting Array to bytes
+        $iv = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        $chars = array_map("chr", $iv);
+        $IVbytes = join($chars);
+
+
+        $salt1 = mb_convert_encoding($salt, "UTF-8"); //Encoding to UTF-8
+        $key1 = mb_convert_encoding($key, "UTF-8"); //Encoding to UTF-8
+
+        //SecretKeyFactory Instance of PBKDF2WithHmacSHA1 Java Equivalent
+        $hash = openssl_pbkdf2($key1, $salt1, '256', '65536', 'sha1');
+
+        $encrypted = openssl_encrypt($data, $method, $hash, OPENSSL_RAW_DATA, $IVbytes);
+
+        return bin2hex($encrypted);
+    } else {
+        return "String to encrypt, Salt and Key is required.";
+    }
+}
+
+function decrypts($data = "", $key = NULL, $salt = "")
+{
+    if ($key != NULL && $data != "" && $salt != "") {
+        $dataEncypted = hex2bin($data);
+        $method = "AES-256-CBC";
+
+        //Converting Array to bytes
+        $iv = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        $chars = array_map("chr", $iv);
+        $IVbytes = join($chars);
+
+        $salt1 = mb_convert_encoding($salt, "UTF-8"); //Encoding to UTF-8
+        $key1 = mb_convert_encoding($key, "UTF-8"); //Encoding to UTF-8
+
+        //SecretKeyFactory Instance of PBKDF2WithHmacSHA1 Java Equivalent
+        $hash = openssl_pbkdf2($key1, $salt1, '256', '65536', 'sha1');
+
+        $decrypted = openssl_decrypt($dataEncypted, $method, $hash, OPENSSL_RAW_DATA, $IVbytes);
+        return $decrypted;
+    } else {
+
+        return "Encrypted String to decrypt, Salt and Key is required.";
+    }
+}
+
+function resizeAndConvertToWebP($image, $outputPath, $width = 800, $height = 600)
+    {
+        try {
+            // Create image resource from uploaded file
+            $imageResource = imagecreatefromstring(file_get_contents($image->getRealPath()));
+
+            if (!$imageResource) {
+                throw new \Exception('Failed to create image resource');
+            }
+
+            // Get original dimensions
+            $originalWidth = imagesx($imageResource);
+            $originalHeight = imagesy($imageResource);
+
+            // Calculate aspect ratio
+            $originalAspect = $originalWidth / $originalHeight;
+            $targetAspect = $width / $height;
+
+            // Calculate new dimensions while maintaining aspect ratio
+            if ($originalAspect > $targetAspect) {
+                // Original is wider
+                $newHeight = $height;
+                $newWidth = (int)($height * $originalAspect);
+            } else {
+                // Original is taller or same
+                $newWidth = $width;
+                $newHeight = (int)($width / $originalAspect);
+            }
+
+            // Create new image with target dimensions
+            $resizedImage = imagecreatetruecolor($newWidth, $newHeight);
+
+            // Preserve transparency for PNG and GIF
+            imagealphablending($resizedImage, false);
+            imagesavealpha($resizedImage, true);
+            $transparent = imagecolorallocatealpha($resizedImage, 0, 0, 0, 127);
+            imagefill($resizedImage, 0, 0, $transparent);
+
+            // Resize the image
+            imagecopyresampled(
+                $resizedImage,
+                $imageResource,
+                0,
+                0,
+                0,
+                0,
+                $newWidth,
+                $newHeight,
+                $originalWidth,
+                $originalHeight
+            );
+
+            // Create final canvas with exact dimensions (center cropped)
+            $finalImage = imagecreatetruecolor($width, $height);
+            imagealphablending($finalImage, false);
+            imagesavealpha($finalImage, true);
+            $transparent = imagecolorallocatealpha($finalImage, 0, 0, 0, 127);
+            imagefill($finalImage, 0, 0, $transparent);
+
+            // Calculate cropping position (center)
+            $x = (int)(($newWidth - $width) / 2);
+            $y = (int)(($newHeight - $height) / 2);
+
+            // Crop to exact dimensions
+            imagecopy(
+                $finalImage,
+                $resizedImage,
+                0,
+                0,
+                $x,
+                $y,
+                $width,
+                $height
+            );
+
+            // Save as WebP with quality 80% (adjust as needed)
+            $result = imagewebp($finalImage, $outputPath, 95);
+
+            // Free memory
+            imagedestroy($imageResource);
+            imagedestroy($resizedImage);
+            imagedestroy($finalImage);
+
+            if (!$result) {
+                throw new \Exception('Failed to save WebP image');
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            // Fallback: move original file if WebP conversion fails
+            $filename = pathinfo($outputPath, PATHINFO_FILENAME) . '.' . $image->getClientOriginalExtension();
+            $fallbackPath = pathinfo($outputPath, PATHINFO_DIRNAME) . '/' . $filename;
+            $image->move(pathinfo($outputPath, PATHINFO_DIRNAME), $filename);
+
+            // You might want to log this error for debugging
+            // \Log::error('WebP conversion failed: ' . $e->getMessage());
+
+            return false;
+        }
+    }
