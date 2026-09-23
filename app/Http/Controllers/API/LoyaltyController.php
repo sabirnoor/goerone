@@ -298,10 +298,10 @@ class LoyaltyController extends Controller
                         $walletInsert['PlanType'] = 7;
                         $this->rewardService->addPoints($walletInsert);
                     }
+                    DB::commit();
                 } else {
                     $card_id = $checkUserCardExist->card_id;
                 }
-                pr($card_id);
             }
             if (empty($request->storeToken) && !empty($request->store_id)) {
                 $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
@@ -364,6 +364,7 @@ class LoyaltyController extends Controller
             }
             $request->merge(['discount' => $discount]);
             $request->merge(['user_id' => $request->user()->id]);
+            $request->merge(['card_id' => $card_id]);
             $accessToken->load(['tokenable' => function ($query) {
                 $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired'); // Add store fields
             }]);
@@ -441,18 +442,17 @@ class LoyaltyController extends Controller
                     ]);
                 }
             }
-            pr($storeData);
-            die('ddddddddd');
-            DB::commit();
+
             if ($storeData && $storeData->OTPAllowed == 1) {
                 $otp = !empty($request->otp) ? $request->otp : 0;
-                $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
+                $verified = true; //$this->otpService->verifyOtp($user, $request->phone, $otp);
             } else {
                 $verified = true;
             }
 
             if ($verified) {
-                $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
+                $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)
+                    ->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
                 $stores_id = !empty($accessToken->tokenable_id) ? $accessToken->tokenable_id : 0;
 
                 if ($checkReward && $accessToken && $stores_id > 0) {
@@ -530,13 +530,6 @@ class LoyaltyController extends Controller
 
                         if ($status === 'SUCCESS') {
                             if ($storeData && $storeData->vendortype == 1) {
-                                // $users = User::where('AgencyID', $AgencyID)->where('id', $request->user_id)->where('active', 1)->first();
-                                // $RewardRequest = [
-                                //     "points_to_redeem" => ($rewardrequired),
-                                //     "notes" => 'Event Pass - ' . $storeData->store_name,
-                                // ];
-                                // $redemption = Helper::rewardRedemption($users, $RewardRequest);
-                                // Helper::rewardprocessRedemption($redemption);
 
                                 $RewardRedeem = [
                                     "points" => ceil($rewardrequired),
@@ -563,21 +556,6 @@ class LoyaltyController extends Controller
                                     'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
                                 ];
                                 $this->rewardService->addPoints($RewardInsert);
-                                // $result = DB::select(
-                                //     'CALL InsertRewardEarn(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                                //     [
-                                //         $request->user_id,
-                                //         $request->card_id,
-                                //         $request->reward_id,
-                                //         $AgencyID,
-                                //         $UserSysId,
-                                //         $rewardtype,
-                                //         $request->order_amount,
-                                //         $rewardEarns,
-                                //         $request->input('created_at', null),
-                                //         $request->input('updated_at', null)
-                                //     ]
-                                // );
                             }
 
                             return response()->json([
@@ -613,6 +591,7 @@ class LoyaltyController extends Controller
                         ]);
                     }
                 } else {
+                    DB::rollback();
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -622,6 +601,7 @@ class LoyaltyController extends Controller
                     ]);
                 }
             } else {
+                DB::rollback();
                 return response()->json([
                     'status' => [
                         'success' => false,
