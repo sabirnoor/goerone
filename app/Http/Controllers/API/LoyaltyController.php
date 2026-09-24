@@ -1162,6 +1162,7 @@ class LoyaltyController extends Controller
                     'description' => 'required',
                     'maxdiscountvalue' => 'required',
                     // Reward deal values
+                    'ordervalue'=> 'required|numeric|gt:0',
                     'dealvalue' => 'required|numeric|gt:0',
                     'custvalue' => 'required|numeric|min:0|max:100',
                     'ownervalue'=> 'required|numeric|min:0|max:100',
