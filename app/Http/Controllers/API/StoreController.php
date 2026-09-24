@@ -912,6 +912,10 @@ class StoreController extends Controller
                 'minOrderValue' => (float) $reward->ordervalue,
                 'startDate'   => $reward->start_date,
                 'endDate'     => $reward->end_date,
+                'maxdiscountvalue'=>(float) $reward->maxdiscountvalue,
+                'custvalue'=>(float) $reward->custvalue,
+                'ownervalue'=>(float) $reward->ownervalue,
+                'max_reward_value'=>(float) $reward->max_reward_value,
             ];
         }
 
