@@ -56,9 +56,12 @@ class User extends Authenticatable
 
     public function UserMembership()
     {
-        return $this->hasOne(LoyaltyUserCard::class, 'user_id', 'id')
-            ->where('user_card.status', 'active')
-            ->whereColumn('user_card.AgencyID', 'users.AgencyID');
+        return $this->hasOne(
+            LoyaltyUserCard::class,
+            'user_id',
+            'id'
+        )
+            ->where('user_card.status', 'active');
     }
     public function details()
     {
