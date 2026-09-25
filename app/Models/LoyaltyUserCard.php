@@ -12,6 +12,14 @@ class LoyaltyUserCard extends Model
     protected $fillable = [
         '*',
     ];
+    public function LoyaltyCard()
+    {
+        return $this->belongsTo(
+            LoyaltyCard::class,
+            'card_id',
+            'card_id'
+        );
+    }
     public function usercard()
     {
         return $this->belongsTo(LoyaltyCard::class, 'card_id', 'card_id')->with('LoyaltyProgram');

@@ -135,7 +135,7 @@ class GoerOneAuthController extends Controller
                 ? $user->id
                 : $user->AgencyID;
 
-            $testUser = User::where('id', $request->customer_id)
+            $testUser = User::with('UserMembership.usercard')->where('id', $request->customer_id)
                 ->where('AgencyID', $AgencyID)
                 ->whereIn('UserType', [0, 2])
                 ->where('GoerOne', 1)
@@ -338,7 +338,7 @@ class GoerOneAuthController extends Controller
         $user = $request->user();
         $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
         $UserSysId = $request->UserSysId ?? 0;
-        $checkuser = User::where('AgencyID', $AgencyID)->where('mobile', $request->mobile)->where(function ($query) {
+        $checkuser = User::with('UserMembership.usercard')->where('AgencyID', $AgencyID)->where('mobile', $request->mobile)->where(function ($query) {
             $query->where('UserType', 2)
                 ->orWhere('UserType', 0);
         })->where(function ($query) use ($UserSysId) {

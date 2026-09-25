@@ -54,7 +54,15 @@ class User extends Authenticatable
         'is_online' => 'boolean',
     ];
 
-
+    public function UserMembership()
+    {
+        return $this->hasOne(
+            LoyaltyUserCard::class,
+            'user_id',
+            'id'
+        )
+            ->where('user_card.status', 'active');
+    }
     public function details()
     {
         return $this->hasOne(incorporation_details::class, 'UserSysId', 'id'); // Adjust model path if needed
