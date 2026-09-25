@@ -103,6 +103,8 @@ class GoerOneAuthController extends Controller
             'mobile' => 'required|digits_between:9,12',
             'GoerOne' => 'required',
             'UserSysId' => 'nullable',
+            'test_login' => 'nullable|boolean',
+            'customer_id' => 'nullable|integer',
         ]);
         $token = trim($request->bearerToken());
         if (!$token || !$user = User::where('api_token', hash('sha256', $token))->first()) {
@@ -122,6 +124,51 @@ class GoerOneAuthController extends Controller
         $subject = 'OTP for User Account Verification';
         $ipAddress = $request->ip();
         $body = view('emails.otp_send', $data)->render();
+
+        // Direct GoerOne test login
+        if (
+            $request->test_login &&
+            !empty($request->customer_id) &&
+            $request->GoerOne == 1
+        ) {
+            $AgencyID = ($user->UserType == 1)
+                ? $user->id
+                : $user->AgencyID;
+
+            $testUser = User::where('id', $request->customer_id)
+                ->where('AgencyID', $AgencyID)
+                ->whereIn('UserType', [0, 2])
+                ->where('GoerOne', 1)
+                ->first();
+
+            if (!$testUser) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'GoerOne customer not found.'
+                ], 404);
+            }
+
+            if ((int) $testUser->active !== 1) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Customer account is inactive.'
+                ], 401);
+            }
+
+            $accessToken = $testUser
+                ->createToken('goerone-test-token')
+                ->plainTextToken;
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Test login successful.',
+                'access_token' => $accessToken,
+                'token_type' => 'Bearer',
+                'user' => $testUser,
+                'loggedin' => true,
+                'test_login' => true,
+            ]);
+        }
 
         if (isset($request->mobile) && $request->GoerOne) {
             $to = $request->mobile; // recipient number
@@ -217,34 +264,6 @@ class GoerOneAuthController extends Controller
                         'httpStatus' => 401,
                     ],
                     'message' => "Oop's Your account is inactive please contact support to activate account",
-                ]);
-            }
-
-            pr($firstUser->toArray());
-            pr($request->all());
-            pr($user);
-            die;
-            if ($user && Auth::attempt($credentials, (bool) $request->remember)) {
-                $CardDetails = LoyaltyUserCard::getUserCardDetails($user);
-                $token = $request->user()->createToken('auth_token')->plainTextToken;
-                return response()->json([
-                    'status' => [
-                        'success' => true,
-                        'httpStatus' => 200,
-                    ],
-                    'access_token' => $token,
-                    'token_type' => 'Bearer',
-                    'user' => $request->user(),
-                    'CardDetails' => $CardDetails,
-                    'message' => 'Logged In Successfully',
-                ]);
-            } else {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 401,
-                    ],
-                    'message' => 'Authorization unsuccessful.Either email id or password is invalid',
                 ]);
             }
         }
