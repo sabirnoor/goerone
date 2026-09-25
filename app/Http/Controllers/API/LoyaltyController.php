@@ -1160,7 +1160,12 @@ class LoyaltyController extends Controller
                     'is_active' => 'required',
                     'reward_name' => 'required|max:191',
                     'description' => 'required',
-                    'maxdiscountvalue' => 'required'
+                    'maxdiscountvalue' => 'required',
+                    // Reward deal values
+                    'ordervalue'=> 'required|numeric|gt:0',
+                    'dealvalue' => 'required|numeric|gt:0',
+                    'custvalue' => 'required|numeric|min:0|max:100',
+                    'ownervalue'=> 'required|numeric|min:0|max:100',
                 ]);
                 if ($validator->fails()) {
                     $errors = json_encode($validator->messages());
@@ -1180,6 +1185,19 @@ class LoyaltyController extends Controller
                         'error' => $validator->messages(),
                     ]);
                 } else {
+
+                $customerValue = (float) $request->custvalue;
+                $ownerValue = (float) $request->ownervalue;
+
+                if (($customerValue + $ownerValue) != 100) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 422,
+                        ],
+                        'message' => 'Value for customer and Value for owner must total 100%.'
+                    ]);
+                }
                     $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
                     $reward_id = (isset($request->reward_id) && $request->reward_id > 0) ? $request->reward_id : 0;
                     $parent_id = (isset($request->parent_id) && $request->parent_id > 0) ? $request->parent_id : 0;

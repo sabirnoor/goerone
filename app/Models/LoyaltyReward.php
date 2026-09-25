@@ -229,11 +229,14 @@ class LoyaltyReward extends Model
             'reward.dealtype',
             'reward.dealvalue',
             'reward.custvalue',
+            'reward.ownervalue',
             'reward.rewardtype',
             'reward.rewardvalue',
             'reward.ordervalue',
             'reward.start_date',
-            'reward.end_date'
+            'reward.end_date',
+            'reward.maxdiscountvalue',
+            'reward.max_reward_value',
         )
             ->join('stores_mapping', function ($join) {
                 $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
