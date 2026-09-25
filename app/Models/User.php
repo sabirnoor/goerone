@@ -206,7 +206,10 @@ class User extends Authenticatable
         return $this->balance >= $amount;
     }
 
-
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
 
     public function rewards()
     {

@@ -8,6 +8,7 @@ use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\MessageController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Models\Service;
 use Illuminate\Http\Request;
@@ -98,6 +99,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::prefix("tickets")->group(function () {
         Route::post('/services', fn() => Service::where('status', 1)->get());
+    });
+
+    Route::prefix('sms')->group(function () {
+        Route::post('/sendotp', [MessageController::class, 'sendOTP']);
+        Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
