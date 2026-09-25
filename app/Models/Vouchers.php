@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 
 class Vouchers extends Model
 {
@@ -44,6 +45,40 @@ class Vouchers extends Model
     /**
      * Relationships
      */
+
+    /** Vouchers that can be sold on the portal right now */
+    public function scopePurchasable(Builder $q): Builder
+    {
+        return $q->where('is_active', 1)
+            ->where(fn($w) => $w->whereNull('valid_to')->orWhereDate('valid_to', '>=', today()))
+            ->where(fn($w) => $w->whereNull('no_of_voucher')
+                ->orWhere('no_of_voucher', 0)
+                ->orWhereColumn('sold_count', '<', 'no_of_voucher'));
+    }
+
+    public function isUnlimited(): bool
+    {
+        return empty($this->no_of_voucher);
+    }
+
+    /** null = unlimited */
+    public function remainingStock(): ?int
+    {
+        return $this->isUnlimited() ? null : max(0, (int) $this->no_of_voucher - (int) $this->sold_count);
+    }
+
+    public function isPurchasable(): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+        if ($this->valid_to && \Illuminate\Support\Carbon::parse($this->valid_to)->endOfDay()->isPast()) {
+            return false;
+        }
+        $remaining = $this->remainingStock();
+        return $remaining === null || $remaining > 0;
+    }
+
 
     public function agency()
     {
@@ -141,7 +176,7 @@ class Vouchers extends Model
         return $responsedata;
     }
 
-   public static function getActiveVouchersByStore($storeId, $perPage, $page, $User = null)
+    public static function getActiveVouchersByStore($storeId, $perPage, $page, $User = null)
     {
         $now = Carbon::now();
 
@@ -166,11 +201,11 @@ class Vouchers extends Model
             ->where('vouchers.is_active', 1)
             ->where(function ($q) use ($now) {
                 $q->whereNull('vouchers.valid_from')
-                ->orWhere('vouchers.valid_from', '<=', $now);
+                    ->orWhere('vouchers.valid_from', '<=', $now);
             })
             ->where(function ($q) use ($now) {
                 $q->whereNull('vouchers.valid_to')
-                ->orWhere('vouchers.valid_to', '>=', $now);
+                    ->orWhere('vouchers.valid_to', '>=', $now);
             });
 
         if (!empty($User)) {
