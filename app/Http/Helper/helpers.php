@@ -453,8 +453,8 @@ function resizeAndConvertToWebP($image, $outputPath, $width = 800, $height = 600
         {
             $urlArray = array(
                 'CASHFREE_API_VERSION' => '2025-01-01',
-                'CASHFREE_CLIENTID' => '',
-                'CASHFREE_CLIENTSECRET' => '',
+                'CASHFREE_CLIENTID' => env('TEST_CASHFREE_CLIENTID'),
+                'CASHFREE_CLIENTSECRET' => env('TEST_CASHFREE_CLIENTSECRET'),
                 'CASHFREE_URL' => 'https://sandbox.cashfree.com/pg',
                 'EASEBUZZ_URL' => 'https://testpay.easebuzz.in',
                 'ATOM_URL' => 'https://caller.atomtech.in/ots/aipay/auth',
