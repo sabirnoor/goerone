@@ -111,7 +111,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('payment/verify', [IndexController::class, 'verifyPayment']);
     Route::post('/initiate_payment', [IndexController::class, 'initiate_payment']);
     Route::any('/payment/response', [IndexController::class, 'atomresponse']);
+});
 
+Route::middleware('apiKey')->group(function () {
     Route::prefix('GoerOne')->group(function () {
         Route::post('login', [GoerOneAuthController::class, 'login']);
         Route::post('register', [GoerOneAuthController::class, 'register']);

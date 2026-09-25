@@ -213,7 +213,10 @@ class GoerOneAuthController extends Controller
                     $OTPS,
                     $message
                 );
+
                 $response = $this->twilio->sendSms($to, $message);
+                pr($response);
+                die;
                 $emailRequest = $this->emailService->sendEmail(
                     $user,
                     $to_email,

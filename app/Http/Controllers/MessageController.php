@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use Illuminate\Http\Request;
 use App\Services\TwilioService;
 use App\Services\OtpService;
@@ -75,7 +76,7 @@ class MessageController extends Controller
             $subject = 'OTP for User Account Verification';
             $ipAddress = $request->ip();
             $body = view('emails.otp_send', $data)->render();
-            
+
             // $emailRequest = $this->emailService->sendEmail(
             //     $user,
             //     $to_email,
@@ -95,6 +96,7 @@ class MessageController extends Controller
                 $OTPS,
                 $message
             );
+
             //$message = "Your OTP for user validation is " . $OTPS . ".  \nValid for 5 minutes. Do not share it with anyone.\n" . $signature . "\n";
             $response = $this->twilio->sendSms($to, $message);
             // pr($response);
