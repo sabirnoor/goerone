@@ -7,8 +7,10 @@ use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\VouchersController;
+use App\Http\Controllers\Auth\GoerOneAuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Models\Service;
 use Illuminate\Http\Request;
@@ -104,6 +106,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('sms')->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
+    });
+
+    Route::post('payment/verify', [IndexController::class, 'verifyPayment']);
+    Route::post('/initiate_payment', [IndexController::class, 'initiate_payment']);
+    Route::any('/payment/response', [IndexController::class, 'atomresponse']);
+
+    Route::prefix('GoerOne')->group(function () {
+        Route::post('login', [GoerOneAuthController::class, 'login']);
+        Route::post('register', [GoerOneAuthController::class, 'register']);
+        Route::post('otp-verify', [GoerOneAuthController::class, 'otpverify']);
     });
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');

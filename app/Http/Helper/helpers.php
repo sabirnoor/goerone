@@ -435,4 +435,31 @@ function resizeAndConvertToWebP($image, $outputPath, $width = 800, $height = 600
 
             return false;
         }
+
+        function PGPRODURL()
+        {
+            $urlArray = array(
+                'CASHFREE_API_VERSION' => '2025-01-01',
+                'CASHFREE_CLIENTID' => '',
+                'CASHFREE_CLIENTSECRET' => '',
+                'CASHFREE_URL' => 'https://api.cashfree.com/pg',
+                'EASEBUZZ_URL' => 'https://pay.easebuzz.in',
+                'ATOM_URL' => 'https://payment1.atomtech.in/ots/aipay/auth',
+
+            );
+            return $urlArray;
+        }
+        function PGTESTURL()
+        {
+            $urlArray = array(
+                'CASHFREE_API_VERSION' => '2025-01-01',
+                'CASHFREE_CLIENTID' => '',
+                'CASHFREE_CLIENTSECRET' => '',
+                'CASHFREE_URL' => 'https://sandbox.cashfree.com/pg',
+                'EASEBUZZ_URL' => 'https://testpay.easebuzz.in',
+                'ATOM_URL' => 'https://caller.atomtech.in/ots/aipay/auth',
+
+            );
+            return $urlArray;
+        }
     }

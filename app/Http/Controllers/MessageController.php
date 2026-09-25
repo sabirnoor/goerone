@@ -75,13 +75,14 @@ class MessageController extends Controller
             $subject = 'OTP for User Account Verification';
             $ipAddress = $request->ip();
             $body = view('emails.otp_send', $data)->render();
-            $emailRequest = $this->emailService->sendEmail(
-                $user,
-                $to_email,
-                $subject,
-                $body,
-                $ipAddress
-            );
+            
+            // $emailRequest = $this->emailService->sendEmail(
+            //     $user,
+            //     $to_email,
+            //     $subject,
+            //     $body,
+            //     $ipAddress
+            // );
 
 
             $to = $request->phone; // recipient number

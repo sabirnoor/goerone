@@ -589,19 +589,6 @@ class IndexController extends Controller
         $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
         $UserSysId = $request->user()->id;
 
-        if ($request->user()->UserType == 4) {
-            $BookingLimit = BookingLimit::where('AgencyID', $AgencyID)->where('Staff_id', $UserSysId)->where('PlanType', 1)->first();
-            $StaffSalesAmountToday = FlightBookingModel::StaffSalesAmountToday($request->user());
-            if ($StaffSalesAmountToday->total_sales >= $BookingLimit->dailylimit) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 404,
-                    ],
-                    'message' => 'You do not have enough available daily booking limit amount. Please contact the administrator.'
-                ]);
-            }
-        }
         $email = $request->user()->email;
         $AgencyDetails = Users::getAgencyDetail($AgencyID);
         $amount = $post['amount'];
