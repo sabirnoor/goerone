@@ -1863,6 +1863,7 @@ class LoyaltyController extends Controller
         $city = trim($request->city);
         $country = trim($request->country ?? '');
         $user = $request->user();
+        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
 
         $query = Store::select(
             'stores.id',
@@ -1873,30 +1874,11 @@ class LoyaltyController extends Controller
             'static_cities.fullRegionName'
         )
             ->join('static_cities', 'stores.city', '=', 'static_cities.id')
-            ->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)]);
+            ->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
+            ->where('stores.AgencyID',$AgencyID);
 
         if ($country !== '') {
             $query->whereRaw('LOWER(static_cities.countryName) = ?', [strtolower($country)]);
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Agency / User filtering
-    |--------------------------------------------------------------------------
-    */
-
-        if ($user->UserType == 1) {
-
-            $query->where(
-                'stores.AgencyID',
-                $user->id
-            );
-        } else {
-
-            $query->where(
-                'stores.UserSysId',
-                $user->id
-            );
         }
 
         $matchedRow = $query->first();
@@ -1956,6 +1938,7 @@ class LoyaltyController extends Controller
         $keyword = trim($request->keyword ?? '');
         $limit = (int) ($request->limit ?? 5);
         $user = $request->user();
+        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
 
         $query = Store::select(
             'static_cities.id',
@@ -1965,32 +1948,8 @@ class LoyaltyController extends Controller
             'stores.store_name',
             'stores.address'
         )
-            ->join(
-                'static_cities',
-                'stores.city',
-                '=',
-                'static_cities.id'
-            );
-
-        /*
-    |--------------------------------------------------------------------------
-    | Agency / User filtering
-    |--------------------------------------------------------------------------
-    */
-
-        if ($user->UserType == 1) {
-
-            $query->where(
-                'stores.AgencyID',
-                $user->id
-            );
-        } else {
-
-            $query->where(
-                'stores.UserSysId',
-                $user->id
-            );
-        }
+            ->join('static_cities','stores.city','=','static_cities.id')
+            ->where('stores.AgencyID',$AgencyID);
 
         if ($keyword !== '') {
             $like = '%' . strtolower($keyword) . '%';

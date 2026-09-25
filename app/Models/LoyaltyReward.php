@@ -334,6 +334,7 @@ class LoyaltyReward extends Model
 
     public static function getStoreRewardForStoreDetail($User, $perPage, $page, $post = array())
     {
+        $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
         $responsedata = LoyaltyReward::select(
             'reward.*',
             DB::raw('DATE_FORMAT(reward.created_at, "%d %b, %Y") as createdDate'),
@@ -342,13 +343,7 @@ class LoyaltyReward extends Model
         )
             ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
             ->leftJoin('stores_mapping as sm', 'sm.reward_id', '=', 'reward.reward_id')
-            ->where(function ($query) use ($User) {
-                if ($User->UserType == 1) {
-                    $query->where('reward.AgencyID', $User->id);
-                } else {
-                    $query->where('reward.UserSysId', $User->id);
-                }
-            })
+            ->where('reward.AgencyID', $AgencyID)
             ->whereExists(function ($query) use ($post) {
                 $query->select(DB::raw(1))
                     ->from('stores_mapping')

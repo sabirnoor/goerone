@@ -500,7 +500,7 @@ class StoreController extends Controller
             $lat = $request->filled('lat')? (float) $request->lat: null;
             $lon = $request->filled('lon')? (float) $request->lon: null;
             $user = $request->user();
-
+            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
         /*
         |--------------------------------------------------------------------------
         | Base Query (Store-first, joined to static_cities)
@@ -525,7 +525,8 @@ class StoreController extends Controller
                     'stores.city',
                     '=',
                     'static_cities.id'
-                );
+                )
+                  ->where('stores.AgencyID',$AgencyID);
 
         /*
         |--------------------------------------------------------------------------
@@ -539,18 +540,6 @@ class StoreController extends Controller
                 $q->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
                     ->orWhereRaw('LOWER(stores.address) LIKE ?', [$cityLike]);
             });
-
-         /*
-        |--------------------------------------------------------------------------
-        | Agency / User filtering
-        |--------------------------------------------------------------------------
-        */
-
-            if ($user->UserType == 1) {
-                $query->where('stores.AgencyID',$user->id);
-            } else {
-                $query->where('stores.UserSysId',$user->id );
-            }
 
         /*
         |--------------------------------------------------------------------------
@@ -614,9 +603,7 @@ class StoreController extends Controller
             $rows = $query->orderByDesc('stores.id')->limit($limit + 1)->get();
             $hasMore = $rows->count() > $limit;
 
-            if ($hasMore) {
-                $rows = $rows->take($limit);
-            }
+            if ($hasMore) { $rows = $rows->take($limit); }
 
             if ($rows->isEmpty()) {
 
@@ -634,23 +621,12 @@ class StoreController extends Controller
                 ]);
             }
 
-            /*
+        /*
         |--------------------------------------------------------------------------
         | Best active reward per store
         |--------------------------------------------------------------------------
         */
-
-            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
-            $rewardMap = LoyaltyReward::getBestRewardsForStores(
-                $rows->pluck('id')->toArray(),
-                $AgencyID
-            );
-
-            /*
-        |--------------------------------------------------------------------------
-        | Format response
-        |--------------------------------------------------------------------------
-        */
+        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(),$AgencyID);
 
         $items = $rows->map(fn($store) => $this->formatStore( $store,true,$rewardMap))->values();
 
@@ -699,7 +675,7 @@ class StoreController extends Controller
             $radius = (float) ($request->radius ?? 40 );
             $offset = (int) ( $request->offset ?? 0 );
             $user = $request->user();
-
+            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
         /*
         |--------------------------------------------------------------------------
         | STEP 1: Calculate bounding box
@@ -739,26 +715,9 @@ class StoreController extends Controller
             ])
             ->whereNotNull('lat')
             ->whereNotNull('lon')
-
-                /*
-            | Bounding box.
-            |
-            | This is MUCH cheaper than Haversine and allows
-            | MySQL to eliminate most rows before distance calculation.
-            */
+            ->where('AgencyID',$AgencyID)
             ->whereBetween('lat', [$minLat,$maxLat])
             ->whereBetween('lon', [$minLon,$maxLon]);
-            /*
-        |--------------------------------------------------------------------------
-        | STEP 3: Agency / User filtering
-        |--------------------------------------------------------------------------
-        */
-
-        if ($user->UserType == 1) {
-            $query->where('AgencyID',$user->id);
-        } else {
-            $query->where('UserSysId',$user->id);
-        }
 
         /*
         |--------------------------------------------------------------------------
@@ -813,8 +772,7 @@ class StoreController extends Controller
         | STEP 7: Sort + pagination
         |--------------------------------------------------------------------------
         */
-        $rows = $query->orderBy('distance_km')
-                ->orderBy('id')->offset($offset)
+        $rows = $query->orderBy('distance_km')->orderBy('id')->offset($offset)
                 ->limit($limit + 1)->get();
 
         /*
@@ -825,16 +783,13 @@ class StoreController extends Controller
 
         $hasMore = $rows->count() > $limit;
 
-        if ($hasMore) {
-            $rows = $rows->take($limit);
-        }
+        if ($hasMore) {$rows = $rows->take($limit);}
 
         /*
         |--------------------------------------------------------------------------
         | STEP 9: Best active reward per store
         |--------------------------------------------------------------------------
         */
-        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
         $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(),$AgencyID);
         /*
         |--------------------------------------------------------------------------
@@ -842,12 +797,7 @@ class StoreController extends Controller
         |--------------------------------------------------------------------------
         */
         $items = $rows->map(fn($store) => $this->formatStore( $store,false,$rewardMap))->values();
-        /*
-        |--------------------------------------------------------------------------
-        | Response
-        |--------------------------------------------------------------------------
-        */
-
+    
             return response()->json([
                 'status' => [
                     'success'    => true,

@@ -179,7 +179,7 @@ class Vouchers extends Model
     public static function getActiveVouchersByStore($storeId, $perPage, $page, $User = null)
     {
         $now = Carbon::now();
-
+        $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
         $query = Vouchers::select(
             'vouchers.id',
             'vouchers.voucher_name',
@@ -198,6 +198,7 @@ class Vouchers extends Model
             'vouchers.terms_condition'
         )
             ->where('vouchers.store_id', $storeId)
+            ->where('vouchers.AgencyID', $AgencyID)
             ->where('vouchers.is_active', 1)
             ->where(function ($q) use ($now) {
                 $q->whereNull('vouchers.valid_from')
@@ -207,16 +208,6 @@ class Vouchers extends Model
                 $q->whereNull('vouchers.valid_to')
                     ->orWhere('vouchers.valid_to', '>=', $now);
             });
-
-        if (!empty($User)) {
-            $query->where(function ($q) use ($User) {
-                if ($User->UserType == 1) {
-                    $q->where('vouchers.AgencyID', $User->id);
-                } else {
-                    $q->where('vouchers.UserSysId', $User->id);
-                }
-            });
-        }
 
         return $query->orderBy('vouchers.id', 'DESC')
             ->paginate($perPage, ['*'], 'voucher_page', $page);
