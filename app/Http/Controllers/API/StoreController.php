@@ -425,406 +425,229 @@ class StoreController extends Controller
         }
     }
 
-    /**
-     * Single entry point for both the city-based "discover" feed and the
-     * distance-based "nearby" feed. Dispatches on `mode` so the frontend
-     * only has to know about one endpoint. The two modes need different
-     * required params and pagination styles (id-cursor vs offset), so we
-     * validate per-mode and hand off to a private helper for the actual
-     * query — merging the two into one giant conditional query wasn't
-     * worth the readability hit.
-     */
-    public function search(Request $request)
-    {
-        try {
-            $mode = $request->mode === 'nearby' ? 'nearby' : 'discover';
+   private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
 
-            $rules = [
-                'mode'     => 'nullable|in:discover,nearby',
-                'category' => 'nullable|string|max:191',
-                'limit'    => 'nullable|integer|min:1|max:50',
-            ];
+/**
+ * Single entry point for both the city-based "discover" feed and the
+ * distance-based "nearby" feed. ...
+ */
+public function search(Request $request)
+{
+    try {
+        $mode = $request->mode === 'nearby' ? 'nearby' : 'discover';
 
-            if ($mode === 'nearby') {
-                $rules['lat']    = 'required|numeric|between:-90,90';
-                $rules['lon']    = 'required|numeric|between:-180,180';
-                $rules['radius'] = 'nullable|numeric|min:0.1|max:100';
-                $rules['offset'] = 'nullable|integer|min:0';
-            } else {
-                $rules['city']   = 'required|string|max:191';
-                $rules['cursor'] = 'nullable|integer';
-                $rules['lat']    = 'nullable|numeric|between:-90,90';
-                $rules['lon']    = 'nullable|numeric|between:-180,180';
-            }
+        $rules = [
+            'mode'     => 'nullable|in:discover,nearby',
+            'category' => 'nullable|string|max:191',
+            'limit'    => 'nullable|integer|min:1|max:50',
+        ];
 
-            $validator = Validator::make($request->all(), $rules);
+        if ($mode === 'nearby') {
+            $rules['lat']    = 'required|numeric|between:-90,90';
+            $rules['lon']    = 'required|numeric|between:-180,180';
+            $rules['radius'] = 'nullable|numeric|min:0.1|max:100';
+            $rules['offset'] = 'nullable|integer|min:0';
+        } else {
+            $rules['city']   = 'required|string|max:191';
+            $rules['cursor'] = 'nullable|integer';
+            $rules['lat']    = 'nullable|numeric|between:-90,90';
+            $rules['lon']    = 'nullable|numeric|between:-180,180';
+        }
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'status' => [
-                        'success'    => false,
-                        'httpStatus' => 422
-                    ],
-                    'message' => $validator->errors()->first(),
-                ]);
-            }
+        $validator = Validator::make($request->all(), $rules);
 
-            $category = trim($request->category ?? '');
-            $limit    = (int) ($request->limit ?? 15);
+        if ($validator->fails()) {
+            return $this->jsonError($validator->errors()->first(), 422);
+        }
 
-            return $mode === 'nearby'
-                ? $this->searchNearby($request, $category, $limit)
-                : $this->searchDiscover($request, $category, $limit);
-        } catch (\Throwable $th) {
+        $category = trim($request->category ?? '');
+        $limit    = (int) ($request->limit ?? 15);
 
-            return response()->json([
-                'status' => [
-                    'success'    => false,
-                    'httpStatus' => 500
-                ],
-                'message' => $th->getMessage(),
+        return $mode === 'nearby'
+            ? $this->searchNearby($request, $category, $limit)
+            : $this->searchDiscover($request, $category, $limit);
+    } catch (\Throwable $th) {
+        return $this->jsonError($th->getMessage());
+    }
+}
+
+/**
+ * Discover stores by city. Uses cursor pagination instead of offset pagination.
+ */
+private function searchDiscover(Request $request, string $category, int $limit)
+{
+    try {
+        $city   = trim($request->city);
+        $cursor = $request->cursor;
+        $lat = $request->filled('lat') ? (float) $request->lat : null;
+        $lon = $request->filled('lon') ? (float) $request->lon : null;
+        $user = $request->user();
+        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
+
+        $query = Store::query()
+            ->select([
+                'stores.id', 'stores.store_name', 'stores.store_logo',
+                'stores.address', 'stores.description', 'stores.vendor_category',
+                'stores.lat', 'stores.lon', 'stores.placeId', 'stores.city',
+                'static_cities.cityName',
+            ])
+            ->join('static_cities', 'stores.city', '=', 'static_cities.id')
+            ->where('stores.AgencyID', $AgencyID);
+
+        $cityLike = '%' . strtolower($city) . '%';
+        $query->where(function ($q) use ($city, $cityLike) {
+            $q->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
+                ->orWhereRaw('LOWER(stores.address) LIKE ?', [$cityLike]);
+        });
+
+        if ($category !== '') {
+            $query->where('stores.vendor_category', $category);
+        }
+
+        // Optional distance calculation — display-only, doesn't affect sorting/pagination.
+        if (
+            $lat !== null && $lat !== '' &&
+            $lon !== null && $lon !== '' &&
+            strtolower(trim((string) $lat)) !== 'null' &&
+            strtolower(trim((string) $lon)) !== 'null'
+        ) {
+            $query->selectRaw($this->haversineExpression(), [$lat, $lon, $lat]);
+        }
+
+        if (!empty($cursor)) {
+            $query->where('stores.id', '<', (int) $cursor);
+        }
+
+        $rows = $query->orderByDesc('stores.id')->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
+        if ($hasMore) { $rows = $rows->take($limit); }
+
+        $categories = collect(self::VENDOR_CATEGORIES)->values();
+
+        if ($rows->isEmpty()) {
+            return $this->jsonSuccess('No stores found in ' . $city . '.', [
+                'items'      => [],
+                'nextCursor' => null,
+                'mode'       => 'discover',
+                'categories' => $categories,
             ]);
         }
-    }
 
+        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(), $AgencyID);
+        $items = $rows->map(fn($store) => $this->formatStore($store, true, $rewardMap))->values();
 
-    /**
-     * Discover stores by city.
-     *
-     * Uses cursor pagination instead of offset pagination.
-     */
-    private function searchDiscover( Request $request,string $category,int $limit) {
-        try {
-            $city   = trim($request->city);
-            $cursor = $request->cursor;
-            $lat = $request->filled('lat')? (float) $request->lat: null;
-            $lon = $request->filled('lon')? (float) $request->lon: null;
-            $user = $request->user();
-            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
-        /*
-        |--------------------------------------------------------------------------
-        | Base Query (Store-first, joined to static_cities)
-        |--------------------------------------------------------------------------
-        */
-            $query = Store::query()
-                ->select([
-                    'stores.id',
-                    'stores.store_name',
-                    'stores.store_logo',
-                    'stores.address',
-                    'stores.description',
-                    'stores.vendor_category',
-                    'stores.lat',
-                    'stores.lon',
-                    'stores.placeId',
-                    'stores.city',
-                    'static_cities.cityName',
-                ])
-                ->join(
-                    'static_cities',
-                    'stores.city',
-                    '=',
-                    'static_cities.id'
-                )
-                  ->where('stores.AgencyID',$AgencyID);
-
-        /*
-        |--------------------------------------------------------------------------
-        | City match: exact static_cities.cityName OR keyword found in stores.address
-        |--------------------------------------------------------------------------
-        */
-
-            $cityLike = '%' . strtolower($city) . '%';
-
-            $query->where(function ($q) use ($city, $cityLike) {
-                $q->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
-                    ->orWhereRaw('LOWER(stores.address) LIKE ?', [$cityLike]);
-            });
-
-        /*
-        |--------------------------------------------------------------------------
-        | Category filter
-        |--------------------------------------------------------------------------
-        */
-
-            if ($category !== '') {
-                $query->where('stores.vendor_category',$category);
-            }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Optional distance calculation
-        |
-        | This is display-only.
-        | It does NOT affect sorting or pagination.
-        |--------------------------------------------------------------------------
-        */
-
-            if (
-                $lat !== null && $lat !== '' &&
-                $lon !== null && $lon !== '' &&
-                strtolower(trim((string) $lat)) !== 'null' &&
-                strtolower(trim((string) $lon)) !== 'null'
-            ) {
-
-                $query->selectRaw(
-                    "(6371 * acos(
-                    LEAST(
-                        1,
-                        GREATEST(
-                            -1,
-                            cos(radians(?))
-                            * cos(radians(stores.lat))
-                            * cos(radians(stores.lon) - radians(?))
-                            + sin(radians(?))
-                            * sin(radians(stores.lat))
-                        )
-                    )
-                )) AS distance_km",
-                    [$lat,$lon,$lat]);
-            }
-
-            /*
-        |--------------------------------------------------------------------------
-        | Cursor pagination
-        |--------------------------------------------------------------------------
-        */
-
-            if (!empty($cursor)) {
-                $query->where('stores.id','<',(int) $cursor);
-            }
-
-            /*
-        |--------------------------------------------------------------------------
-        | Fetch one extra record
-        |--------------------------------------------------------------------------
-        */
-
-            $rows = $query->orderByDesc('stores.id')->limit($limit + 1)->get();
-            $hasMore = $rows->count() > $limit;
-
-            if ($hasMore) { $rows = $rows->take($limit); }
-
-            if ($rows->isEmpty()) {
-
-                return response()->json([
-                    'status' => [
-                        'success'    => true,
-                        'httpStatus' => 200
-                    ],
-                    'message' => 'No stores found in ' . $city . '.',
-                    'data' => [
-                        'items'      => [],
-                        'nextCursor' => null,
-                        'mode'       => 'discover',
-                    ],
-                ]);
-            }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Best active reward per store
-        |--------------------------------------------------------------------------
-        */
-        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(),$AgencyID);
-
-        $items = $rows->map(fn($store) => $this->formatStore( $store,true,$rewardMap))->values();
-
-        return response()->json([
-                'status' => [
-                    'success'    => true,
-                    'httpStatus' => 200
-                ],
-                'message' => 'Stores fetched successfully.',
-                'data' => [
-                    'items' => $items,
-                    'nextCursor' => $hasMore
-                        ? $rows->last()->id
-                        : null,
-                    'mode' => 'discover',
-                ],
+        return $this->jsonSuccess('Stores fetched successfully.', [
+            'items'      => $items,
+            'nextCursor' => $hasMore ? $rows->last()->id : null,
+            'mode'       => 'discover',
+            'categories' => $categories,
         ]);
-        } catch (\Throwable $th) {
-
-        return response()->json([
-                'status' => [
-                    'success'    => false,
-                    'httpStatus' => 500
-                ],
-                'message' => $th->getMessage(),
-        ]);
-        }
+    } catch (\Throwable $th) {
+        return $this->jsonError($th->getMessage());
     }
+}
 
+/**
+ * Nearby stores. Bounding box -> Haversine -> radius filter -> paginate.
+ */
+private function searchNearby(Request $request, string $category, int $limit)
+{
+    try {
+        $lat = (float) $request->lat;
+        $lon = (float) $request->lon;
+        $radius = (float) ($request->radius ?? 50);
+        $offset = (int) ($request->offset ?? 0);
+        $user = $request->user();
+        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
 
-    /**
-     * Nearby stores.
-     *
-     * Optimized using:
-     *
-     * 1. Agency/User filtering
-     * 2. Category filtering
-     * 3. Bounding box filtering
-     * 4. Haversine distance calculation
-     * 5. Radius filtering
-     */
-    private function searchNearby( Request $request, string $category, int $limit) {
-        try {
-            $lat = (float) $request->lat;
-            $lon = (float) $request->lon;
-            $radius = (float) ($request->radius ?? 40 );
-            $offset = (int) ( $request->offset ?? 0 );
-            $user = $request->user();
-            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 1: Calculate bounding box
-        |
-        | This avoids running expensive Haversine calculations
-        | against every store.
-        |--------------------------------------------------------------------------
-        */
-            $latDelta = $radius / 111.0;
-            $cosLat = cos(deg2rad($lat));
-            /* Avoid division by zero near the poles.*/
-            $cosLat = max(abs($cosLat),0.000001);
-            $lonDelta = $radius / (111.0 * $cosLat);
-            $minLat = max(-90,$lat - $latDelta);
-            $maxLat = min(90,$lat + $latDelta);
+        $latDelta = $radius / 111.0;
+        $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
+        $lonDelta = $radius / (111.0 * $cosLat);
+        $minLat = max(-90, $lat - $latDelta);
+        $maxLat = min(90, $lat + $latDelta);
+        $minLon = $lon - $lonDelta;
+        $maxLon = $lon + $lonDelta;
 
-            $minLon = $lon - $lonDelta;
-            $maxLon = $lon + $lonDelta;
-
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 2: Build base query
-        |--------------------------------------------------------------------------
-        */
-            $query = Store::query()
+        $query = Store::query()
             ->select([
-                'id',
-                'store_name',
-                'store_logo',
-                'address',
-                'description',
-                'vendor_category',
-                'lat',
-                'lon',
-                'placeId',
-                'city',
+                'id', 'store_name', 'store_logo', 'address', 'description',
+                'vendor_category', 'lat', 'lon', 'placeId', 'city',
             ])
             ->whereNotNull('lat')
             ->whereNotNull('lon')
-            ->where('AgencyID',$AgencyID)
-            ->whereBetween('lat', [$minLat,$maxLat])
-            ->whereBetween('lon', [$minLon,$maxLon]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 4: Category filtering
-        |--------------------------------------------------------------------------
-        */
+            ->where('AgencyID', $AgencyID)
+            ->whereBetween('lat', [$minLat, $maxLat])
+            ->whereBetween('lon', [$minLon, $maxLon]);
 
         if ($category !== '') {
-            $query->where( 'vendor_category',$category);
+            $query->where('vendor_category', $category);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 5: Haversine distance
-        |--------------------------------------------------------------------------
-        |
-        | LEAST/GREATEST protects against floating point values
-        | slightly exceeding the valid acos range [-1, 1].
-        |
-        */
+        $query->selectRaw($this->haversineExpression(), [$lat, $lon, $lat]);
+        $query->having('distance_km', '<=', $radius);
 
-        $haversine = "(
-                6371 * ACOS(
-                    LEAST(
-                        1,
-                        GREATEST(
-                            -1,
-                            COS(RADIANS(?))
-                            * COS(RADIANS(lat))
-                            * COS(
-                                RADIANS(lon) - RADIANS(?)
-                            )
-                            + SIN(RADIANS(?))
-                            * SIN(RADIANS(lat))
-                        )
-                    )
-                )
-            )
-        ";
-
-        $query->selectRaw( "{$haversine} AS distance_km", [ $lat,$lon, $lat] );
-
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 6: Radius filter
-        |--------------------------------------------------------------------------
-        */
-        $query->having('distance_km','<=',$radius);
-
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 7: Sort + pagination
-        |--------------------------------------------------------------------------
-        */
-        $rows = $query->orderBy('distance_km')->orderBy('id')->offset($offset)
-                ->limit($limit + 1)->get();
-
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 8: Determine next page
-        |--------------------------------------------------------------------------
-        */
+        $rows = $query->orderBy('distance_km')->orderBy('id')
+            ->offset($offset)->limit($limit + 1)->get();
 
         $hasMore = $rows->count() > $limit;
+        if ($hasMore) { $rows = $rows->take($limit); }
 
-        if ($hasMore) {$rows = $rows->take($limit);}
+        $categories = collect(self::VENDOR_CATEGORIES)->values();
 
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 9: Best active reward per store
-        |--------------------------------------------------------------------------
-        */
-        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(),$AgencyID);
-        /*
-        |--------------------------------------------------------------------------
-        | STEP 10: Format response
-        |--------------------------------------------------------------------------
-        */
-        $items = $rows->map(fn($store) => $this->formatStore( $store,false,$rewardMap))->values();
-    
-            return response()->json([
-                'status' => [
-                    'success'    => true,
-                    'httpStatus' => 200
-                ],
-                'message' => 'Nearby stores fetched successfully.',
-                'data' => [
-                    'items' => $items,
-                    'nextOffset' => $hasMore
-                        ? $offset + $limit
-                        : null,
-                    'mode' => 'nearby',
-                ],
-            ]);
-        } catch (\Throwable $th) {
-
-            return response()->json([
-                'status' => [
-                    'success'    => false,
-                    'httpStatus' => 500
-                ],
-                'message' => $th->getMessage(),
+        // No stores at all in this radius (only meaningful on the first page).
+        if ($rows->isEmpty() && $offset === 0) {
+            return $this->jsonSuccess(self::NO_SERVICE_MESSAGE, [
+                'items'      => [],
+                'nextOffset' => null,
+                'mode'       => 'nearby',
+                'categories' => $categories,
             ]);
         }
+
+        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(), $AgencyID);
+        $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
+
+        return $this->jsonSuccess('Nearby stores fetched successfully.', [
+            'items'      => $items,
+            'nextOffset' => $hasMore ? $offset + $limit : null,
+            'mode'       => 'nearby',
+            'categories' => $categories,
+        ]);
+    } catch (\Throwable $th) {
+        return $this->jsonError($th->getMessage());
     }
+}
 
+/**
+ * Shared Haversine SQL fragment (used by both discover's optional distance
+ * calc and nearby's radius filter). Bindings order is always [lat, lon, lat].
+ */
+private function haversineExpression(string $latColumn = 'lat', string $lonColumn = 'lon'): string
+{
+    return "(6371 * acos(
+        LEAST(1, GREATEST(-1,
+            cos(radians(?)) * cos(radians({$latColumn})) * cos(radians({$lonColumn}) - radians(?))
+            + sin(radians(?)) * sin(radians({$latColumn}))
+        ))
+    )) AS distance_km";
+}
 
+private function jsonSuccess(string $message, array $data, int $status = 200)
+{
+    return response()->json([
+        'status'  => ['success' => true, 'httpStatus' => $status],
+        'message' => $message,
+        'data'    => $data,
+    ]);
+}
+
+private function jsonError(string $message, int $status = 500)
+{
+    return response()->json([
+        'status'  => ['success' => false, 'httpStatus' => $status],
+        'message' => $message,
+    ]);
+}
     /**
      * Common store response formatter.
      */

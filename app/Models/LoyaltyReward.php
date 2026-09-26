@@ -215,55 +215,78 @@ class LoyaltyReward extends Model
      * @param int|null $AgencyID
      * @return \Illuminate\Support\Collection keyed by stores_id
      */
-    public static function getBestRewardsForStores(array $storeIds, $AgencyID = null)
-    {
-        if (empty($storeIds)) {
-            return collect();
-        }
-
-        $now = Carbon::now();
-
-        $query = LoyaltyReward::select(
-            'reward.reward_id',
-            'stores_mapping.stores_id',
-            'reward.dealtype',
-            'reward.dealvalue',
-            'reward.custvalue',
-            'reward.ownervalue',
-            'reward.rewardtype',
-            'reward.rewardvalue',
-            'reward.ordervalue',
-            'reward.start_date',
-            'reward.end_date',
-            'reward.maxdiscountvalue',
-            'reward.max_reward_value',
-        )
-            ->join('stores_mapping', function ($join) {
-                $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
-                    ->where('stores_mapping.isdelete', 0);
-            })
-            ->whereIn('stores_mapping.stores_id', $storeIds)
-            ->where('reward.is_active', 1)
-            ->where(function ($q) use ($now) {
-                $q->whereNull('reward.start_date')
-                    ->orWhere('reward.start_date', '<=', $now);
-            })
-            ->where(function ($q) use ($now) {
-                $q->whereNull('reward.end_date')
-                    ->orWhere('reward.end_date', '>=', $now);
-            });
-
-        if (!empty($AgencyID)) {
-            $query->where('reward.AgencyID', $AgencyID);
-        }
-
-        $rewards = $query->get();
-
-        // Pick the highest custvalue reward per store.
-        return $rewards->groupBy('stores_id')->map(function ($storeRewards) {
-            return $storeRewards->sortByDesc('custvalue')->first();
-        });
+   public static function getBestRewardsForStores(array $storeIds, $AgencyID = null)
+{
+    if (empty($storeIds)) {
+        return collect();
     }
+
+    $now = Carbon::now();
+
+    $query = LoyaltyReward::select(
+        'reward.reward_id',
+        'stores_mapping.stores_id',
+        'reward.dealtype',
+        'reward.dealvalue',
+        'reward.custvalue',
+        'reward.ownervalue',
+        'reward.rewardtype',
+        'reward.rewardvalue',
+        'reward.ordervalue',
+        'reward.start_date',
+        'reward.end_date',
+        'reward.maxdiscountvalue',
+        'reward.max_reward_value',
+    )
+        ->join('stores_mapping', function ($join) {
+            $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
+                ->where('stores_mapping.isdelete', 0);
+        })
+        ->whereIn('stores_mapping.stores_id', $storeIds)
+        ->where('reward.is_active', 1)
+        ->where(function ($q) use ($now) {
+            $q->whereNull('reward.start_date')
+                ->orWhere('reward.start_date', '<=', $now);
+        })
+        ->where(function ($q) use ($now) {
+            $q->whereNull('reward.end_date')
+                ->orWhere('reward.end_date', '>=', $now);
+        });
+
+    if (!empty($AgencyID)) {
+        $query->where('reward.AgencyID', $AgencyID);
+    }
+
+    $rewards = $query->get();
+
+    // Pick the reward with the highest *effective customer discount value* per store.
+    return $rewards->groupBy('stores_id')->map(function ($storeRewards) {
+        return $storeRewards
+            ->sortByDesc(fn ($reward) => self::effectiveCustomerValue($reward))
+            ->first();
+    });
+}
+
+/**
+ * Effective discount actually available to the customer.
+ *
+ * custvalue is always a percentage of the deal pool (dealvalue), regardless
+ * of dealtype. dealtype only determines the *unit* dealvalue is expressed in:
+ *   - dealtype 0 (percentage): dealvalue is "% off order" -> result is percentage points
+ *   - dealtype 1 (fixed):      dealvalue is a flat amount  -> result is currency units
+ *
+ * maxdiscountvalue, when set, caps the result regardless of dealtype.
+ */
+private static function effectiveCustomerValue($reward): float
+{
+    $raw = (float) $reward->dealvalue * ((float) $reward->custvalue / 100);
+
+    if (!empty($reward->maxdiscountvalue) && (float) $reward->maxdiscountvalue > 0) {
+        $raw = min($raw, (float) $reward->maxdiscountvalue);
+    }
+
+    return $raw;
+}
 
     public static function getCustomerReward($User, $post = array())
     {
