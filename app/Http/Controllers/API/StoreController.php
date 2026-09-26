@@ -679,7 +679,7 @@ private function jsonError(string $message, int $status = 500)
             $discount = [
                 'rewardId'    => $reward->reward_id,
                 'dealType'    => (int) $reward->dealtype,   // 0 = percentage, 1 = fixed amount
-                'dealValue'   => (float) $reward->custvalue,
+                'dealValue'   => (float) $reward->dealvalue,
                 'rewardType'  => (int) $reward->rewardtype,  // 0 = percentage, 1 = fixed amount
                 'rewardValue' => (float) $reward->rewardvalue,
                 'minOrderValue' => (float) $reward->ordervalue,
