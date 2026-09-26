@@ -103,10 +103,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
-
-    Route::post('payment/verify', [IndexController::class, 'verifyPayment']);
-    Route::post('/initiate_payment', [IndexController::class, 'initiate_payment']);
-    Route::any('/payment/response', [IndexController::class, 'atomresponse']);
 });
 
 Route::middleware('apiKey')->group(function () {
@@ -120,6 +116,9 @@ Route::middleware('apiKey')->group(function () {
 
     Route::post('/store/fetch-store-categories', [StoreController::class, 'fetchStoreCategories']);
     Route::post('/store/search', [StoreController::class, 'search']);
+    Route::post('payment/verify', [IndexController::class, 'verifyPayment']);
+    Route::post('/initiate_payment', [IndexController::class, 'initiate_payment']);
+    Route::any('/payment/response', [IndexController::class, 'atomresponse']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
