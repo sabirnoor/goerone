@@ -35,8 +35,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix("store")->group(function () {
         Route::post('create', [StoreController::class, 'createStore']);
         Route::post('fetch', [StoreController::class, 'fetchStore']);
-        Route::post('fetch-store-categories', [StoreController::class, 'fetchStoreCategories']);
-        Route::post('search', [StoreController::class, 'search']);
         Route::post('remove-image/{imageId}', [StoreController::class, 'removeStoreImage']);
     });
 
@@ -57,8 +55,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('addcard', [LoyaltyController::class, 'addcard']);
         Route::post('addreward', [LoyaltyController::class, 'addreward']);
         Route::post('assign', [LoyaltyController::class, 'assigncard']);
-
-        Route::post('city-service', [LoyaltyController::class, 'cityService']);
 
         //Route::post('validateusercard', [LoyaltyController::class, 'validateusercard']);
         Route::post('membership', [MembershipController::class, 'membershipList']);
@@ -119,6 +115,11 @@ Route::middleware('apiKey')->group(function () {
         Route::post('register', [GoerOneAuthController::class, 'register']);
         Route::post('otp-verify', [GoerOneAuthController::class, 'otpverify']);
     });
+
+    Route::post('/loyalty/city-service', [LoyaltyController::class, 'cityService']);
+
+    Route::post('/store/fetch-store-categories', [StoreController::class, 'fetchStoreCategories']);
+    Route::post('/store/search', [StoreController::class, 'search']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
