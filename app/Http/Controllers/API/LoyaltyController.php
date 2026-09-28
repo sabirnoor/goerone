@@ -639,6 +639,80 @@ class LoyaltyController extends Controller
             ], 400);
         }
     }
+    public function redeemRewardDetails(Request $request)
+    {
+        $user = $request->user();
+        $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+
+        $validator = Validator::make($request->all(), [
+            'referneceNo' => [
+                'required',
+                'string',
+                Rule::exists(LoyaltyRedemption::class, 'referneceNo')
+                    ->where(fn($q) => $q->where('AgencyID', $AgencyID)->where('user_id', $request->user()->id))
+            ]
+
+        ]);
+
+        if ($validator->fails()) {
+            $errors = json_encode($validator->messages());
+            $errorArray = [];
+            if (json_decode($errors, 1)) {
+                foreach (json_decode($errors, 1) as $err) {
+                    foreach ($err as $errs) {
+                        $errorArray[] = ($errs);
+                    }
+                }
+            }
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 422,
+                ],
+                'message' => implode(',', $errorArray),
+                'error' => $validator->errors()
+            ]);
+        }
+
+        try {
+            $checkUserCardExist = LoyaltyUserCard::with('usercard')->select('user_card.*', 'loyalty_card.program_id')
+                ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                ->where('user_card.status', 'active')->first();
+
+            $referneceNo = $request->referneceNo ?? null;
+            $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
+                ->where('user_id', $request->user()->id)->first();
+
+            if ($ReddemPass) {
+                return response()->json([
+                    'status' => [
+                        'success' => true,
+                        'httpStatus' => 200,
+                    ],
+                    'message' => 'Success',
+                    'data' => $ReddemPass,
+                    'UserCard' => $checkUserCardExist,
+                ]);
+            } else {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 400,
+                    ],
+                    'message' => 'No data found',
+                ]);
+            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 500,
+                ],
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
 
     public function calculateServiceTax($intAmount, $percentAgencySTax)
     {
