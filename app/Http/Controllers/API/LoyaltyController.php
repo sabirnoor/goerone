@@ -135,8 +135,8 @@ class LoyaltyController extends Controller
                         $wallet = [
                             "customer_id" => $user->id,
                             "amount" => $TotalAmount,
-                            "RefrenceNo" => isset($request->RefrenceNo) ? $request->RefrenceNo : date('YmdHis'),
-                            "PlanType" => 4,
+                            "RefrenceNo" => isset($request->ref) ? $request->ref : date('YmdHis'),
+                            "PlanType" => 10,
                             "Remark" => "VIP Membership",
                             'PaymentMode' => $ItemName
                         ];
@@ -496,6 +496,29 @@ class LoyaltyController extends Controller
                                 'httpStatus' => 403,
                             ],
                             'message' => 'The specified card does not belong to this user'
+                        ]);
+                    }
+
+                    $wallet = [
+                        "customer_id" => $user->id,
+                        "amount" => ($request->order_amount - $discountCust),
+                        "RefrenceNo" => isset($request->ref) ? $request->ref : date('YmdHis'),
+                        "PlanType" => 10,
+                        "Remark" => "Redeem at " . ($storeData->store_name ?? 'Store'),
+                        'PaymentMode' => 'Redeem'
+                    ];
+
+                    $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
+                    $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
+                    $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
+                    if ($status == 0) {
+                        DB::rollback();
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 1015,
+                            ],
+                            'message' => $message,
                         ]);
                     }
                     // pr($request->all());
