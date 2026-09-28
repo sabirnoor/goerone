@@ -12,6 +12,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
+use App\Http\Controllers\WebhookController;
 use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,10 @@ Route::get('/', function (Request $request) {
     return print_r(UserType());
 });
 
+
+Route::prefix("webhook")->group(function () {
+    Route::match(['get', 'post'], '/secureservereasebuzz', [WebhookController::class, 'secureservereasebuzz']);
+});
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
 
