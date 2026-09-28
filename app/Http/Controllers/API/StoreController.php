@@ -426,7 +426,7 @@ class StoreController extends Controller
     }
 
 private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
-
+private const NO_CATEGORY_MESSAGE = "Sorry, we currently don't have any stores available in this category in your area.";
 /**
  * Location-based store search.
  *
@@ -662,33 +662,38 @@ public function search(Request $request)
         )->values();
 
 
-        /*
-         * ---------------------------------------------------------
-         * No Stores Found
-         * ---------------------------------------------------------
-         *
-         * Only show the service-area message on the
-         * first page. For subsequent pages, simply
-         * return an empty result.
-         */
+      /*
+        * ---------------------------------------------------------
+        * No Stores Found
+        * ---------------------------------------------------------
+        *
+        * If a category was selected, return a category-specific
+        * message. Otherwise, return the general service-area message.
+        *
+        * Only show the message on the first page.
+        */
 
-        if (
-            $rows->isEmpty() &&
-            $offset === 0
-        ) {
-            return $this->jsonSuccess(
-                self::NO_SERVICE_MESSAGE,
-                [
-                    'items' => [],
+    if (
+        $rows->isEmpty() &&
+        $offset === 0
+    ) {
+        $message = $category !== ''
+            ? self::NO_CATEGORY_MESSAGE
+            : self::NO_SERVICE_MESSAGE;
 
-                    'nextOffset' => null,
+        return $this->jsonSuccess(
+            $message,
+            [
+                'items' => [],
 
-                    'radiusKm' => $radius,
+                'nextOffset' => null,
 
-                    'categories' => $categories,
-                ]
-            );
-        }
+                'radiusKm' => $radius,
+
+                'categories' => $categories,
+            ]
+        );
+    }
 
 
         /*
