@@ -365,7 +365,7 @@ class WebhookController extends Controller
                 'created_at' => $currentDate,
                 'updated_at' => $currentDate
             ];
-            $existsuccess = null; //PaymentTransaction::where('agency_id', $AgencyID)->where('status', 'success')->where('txnid', $txnid)->exists();
+            $existsuccess = PaymentTransaction::where('agency_id', $AgencyID)->where('status', 'success')->where('txnid', $txnid)->exists();
             $transaction = PaymentTransaction::insertGetId($transactionData);
 
             if ($status === 'success' && !$existsuccess) {
@@ -395,7 +395,7 @@ class WebhookController extends Controller
                 }
 
                 $user = User::where('AgencyID', $AgencyID)->where('id', $customer_id)->where('active', 1)->first();
-                $Walletstatus = 1; //isset($topUpResponse['status']['success']) ? $topUpResponse['status']['success'] : 0;
+                $Walletstatus = isset($topUpResponse['status']['success']) ? $topUpResponse['status']['success'] : 0;
 
                 if ($Walletstatus == 1) {
 
@@ -415,21 +415,13 @@ class WebhookController extends Controller
                     }
 
                     $bookingProcess = json_decode($bookingProcess, 1);
-                    $isUpgradeToVip = isset($bookingProcess['isUpgradeToVip']) ? $bookingProcess['isUpgradeToVip'] : 0;
-                    $isHoldconfirm = isset($bookingProcess['isHoldconfirm']) ? $bookingProcess['isHoldconfirm'] : 0;
-                    $paymentType = isset($bookingProcess['paymentType']) ? $bookingProcess['paymentType'] : '';
-                    $tenure_months = isset($bookingProcess['tenure_months']) ? $bookingProcess['tenure_months'] : 0;
-
 
                     if ($udf2 == 1 && $Walletstatus == 1) { // Flight booking process
 
-                        echo $URL = $this->API_URL . '/api/loyalty/redeem';
-                        die;
+                        $URL = $this->API_URL . '/api/loyalty/redeem';
                         $response = HttpRequest($URL, $bookingProcess, $AgencyID, $newPlain);
                         $resultSet = json_decode($response, 1);
-                        pr($bookingProcess);
-                        pr($resultSet);
-                        die;
+                        return response()->json(['status' => 'success', 'resultSet' => $resultSet]);
                     }
                 } else {
                     /// wallet recharge failed
@@ -447,7 +439,7 @@ class WebhookController extends Controller
                     'bookingProcess' => $bookingProcess,
                 ];
 
-                Storage::disk('public')->put('logs/Webhook/bookings/' . $BookingID . '_' . $currentDate . '_bookingSuccess.json', json_encode($allResponse));
+                Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '_' . $currentDate . '_redeemSuccess.json', json_encode($allResponse));
             } else {
                 $notification = [
                     'action_url' => '',

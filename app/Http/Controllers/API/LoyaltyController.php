@@ -97,12 +97,16 @@ class LoyaltyController extends Controller
         }
         DB::beginTransaction();
         try {
+            $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
+                ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                ->where('user_card.status', 'active')->first();
+            $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
+            $card_id = isset($checkUserCardExist->card_id) ? $checkUserCardExist->card_id : 0;
+
             if (isset($request->membershipId) && $request->membershipId > 0) {
                 $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
-                $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
-                    ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
-                    ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
-                    ->where('user_card.status', 'active')->first();
+
                 $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
 
                 if ($program_id === 0) {
@@ -303,6 +307,8 @@ class LoyaltyController extends Controller
                     $card_id = $checkUserCardExist->card_id;
                 }
             }
+            $referneceNo = $request->ref ?? null;
+
             if (empty($request->storeToken) && !empty($request->store_id)) {
                 $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
                 $token = $store->createToken('store-token')->plainTextToken;
@@ -320,7 +326,16 @@ class LoyaltyController extends Controller
                     'message' => 'Unauthorized Store'
                 ]);
             }
-
+            $TotalReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)->where('stores_id', $accessToken->tokenable_id)->count();
+            if ($TotalReddemPass > 0) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 4001,
+                    ],
+                    'message' => 'Redemption already processed.'
+                ]);
+            }
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
             $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
@@ -443,12 +458,12 @@ class LoyaltyController extends Controller
                 }
             }
 
-            if ($storeData && $storeData->OTPAllowed == 1) {
-                $otp = !empty($request->otp) ? $request->otp : 0;
-                $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
-            } else {
-                $verified = true;
-            }
+            // if ($storeData && $storeData->OTPAllowed == 1) {
+            //     $otp = !empty($request->otp) ? $request->otp : 0;
+            //     $verified = $this->otpService->verifyOtp($user, $request->phone, $otp);
+            // } else {
+            $verified = true;
+            //}
 
             if ($verified) {
                 $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)
@@ -504,9 +519,10 @@ class LoyaltyController extends Controller
                         } else {
                             $receipt = null; // optional
                         }
+
                         // Call the stored procedure
                         $results = DB::select(
-                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message)',
+                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message, @redemption_id)',
                             [
                                 $request->user_id,
                                 $request->card_id,
@@ -520,11 +536,12 @@ class LoyaltyController extends Controller
                                 !empty($discountCust) ? $discountCust : 0,
                                 !empty($redem_id) ? 'GTR' . $redem_id : 0,
                                 !empty($receipt) ? $receipt : null,
+                                !empty($referneceNo) ? $referneceNo : null,
                             ]
                         );
 
                         // Get the output parameters
-                        $results = DB::select('SELECT @status as status, @message as message');
+                        $results = DB::select('SELECT @status as status, @message as message, @redemption_id as redemption_id');
                         $status = $results[0]->status;
                         $message = $results[0]->message;
 
@@ -564,6 +581,7 @@ class LoyaltyController extends Controller
                                     'httpStatus' => 200,
                                 ],
                                 'message' => $message,
+                                'results' => $results,
                                 'data' => [
                                     'user_id' => $request->user_id,
                                     'card_id' => $request->card_id,
