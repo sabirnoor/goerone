@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Services\RewardService;
 use App\Rules\BelongsToAgency;
-use App\Services\AgentBnplService;
 
 class WalletModel extends Model
 {
@@ -813,33 +812,14 @@ class WalletModel extends Model
 		$currentWalletBalance = $walletTransactions->last()->BalanceAmount ?? 0;
 
 		$UserType = $walletTransactions->last()->UserType ?? 0;
-		$BNPLCreditStatus = $walletTransactions->last()->BNPLCreditStatus ?? 0;
-		// Get available credit
-		$creditLimit = AgentCreditLimit::where('agentcreditlimit.AgencyID', $AgencyID)->where('agentcreditlimit.customer_id', $customer_id)
-			->join('users as u', 'u.id', '=', 'agentcreditlimit.customer_id')
-			->where('u.CreditLimitStatus', true)
-			->where('agentcreditlimit.IsActive', true)
-			->first();
 
-		$totalOutstanding = AgentCreditLimit::where('AgencyID', $AgencyID)
-			->where(function ($query) use ($customer_id) {
-				if ($customer_id > 0) {
-					$query->where('customer_id', $customer_id);
-				}
-			})->sum('CurrentOutstanding');
-
-		$availableCredit = $creditLimit ? ((float)$creditLimit->CreditLimit - (float)$totalOutstanding) : 0;
-		$TermsDays = $creditLimit ? $creditLimit->TermsDays : 0;
-		$EffectiveTo = $creditLimit ? $creditLimit->EffectiveTo : null;
 		// pr($BNPLCreditStatus);
 		// Calculate combined balance
-		$combinedBalance = ($currentWalletBalance > 0) ? $currentWalletBalance + $availableCredit : $availableCredit;
+		$combinedBalance = ($currentWalletBalance > 0) ? $currentWalletBalance:0;
 		// $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $customer_id]);
 		$RewardEarningTemp = RewardEarnTemp::TotalRewardEarning($user, ['user_id' => $customer_id]);
 		$reward = new RewardService();
 		$result = $reward->getRewardSummary($customer_id, $AgencyID);
-		$bnpl = new AgentBnplService();
-		$BNPLsums = $bnpl->sumOfCreditLimit($user, $customer_id);
 		return [
 			'status' => [
 				'success' => true,
@@ -849,10 +829,7 @@ class WalletModel extends Model
 			'UserType' => $UserType,
 			'balances' => [
 				'wallet_balance' => round($currentWalletBalance, 2),
-				'available_credit' => round($availableCredit, 2),
 				'bookable_balance' => round($combinedBalance, 2), //$currentWalletBalance,
-				'totalOutStanding' => round($totalOutstanding, 2) ?? 0,
-				'BNPL' => $BNPLsums ?? [],
 				'reward_balance' => $result ?? [],
 				'reward_balance_temp' => $RewardEarningTemp ?? [],
 				'TermsDays' => $TermsDays ?? 0,
