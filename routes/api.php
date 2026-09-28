@@ -13,6 +13,7 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Http\Controllers\WebhookController;
+use App\Http\Controllers\WalletController;
 use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -108,6 +109,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
+
+    Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
 });
 
 Route::middleware('apiKey')->group(function () {
