@@ -372,11 +372,20 @@ class LoyaltyController extends Controller
             if ($rewardEarns > $max_reward_value) {
                 $rewardEarns = $max_reward_value;
             }
-            if ($discount > $maxdiscountvalue) {
+
+            if ($discount >= $maxdiscountvalue) {
                 $discount = $maxdiscountvalue;
                 $discountOwner = (($maxdiscountvalue * (float)$ownervalue) / 100);
                 $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
             }
+
+            // pr($request->all());
+
+            // pr($discount);
+            // pr($discountOwner);
+            // pr($discountCust);
+            // die;
+
             $request->merge(['discount' => $discount]);
             $request->merge(['user_id' => $request->user()->id]);
             $request->merge(['card_id' => $card_id]);
