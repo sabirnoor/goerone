@@ -425,196 +425,327 @@ class StoreController extends Controller
         }
     }
 
-   private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
+private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
 
 /**
- * Single entry point for both the city-based "discover" feed and the
- * distance-based "nearby" feed. ...
+ * Location-based store search.
+ *
+ * - Latitude and longitude are mandatory.
+ * - Radius is optional and defaults to 50 KM.
+ * - Category is optional.
+ * - Results are sorted by nearest distance.
+ * - Uses bounding box + Haversine for performance and accuracy.
  */
 public function search(Request $request)
 {
     try {
-        $mode = $request->mode === 'nearby' ? 'nearby' : 'discover';
-
         $rules = [
-            'mode'     => 'nullable|in:discover,nearby',
+            'lat'      => 'required|numeric|between:-90,90',
+            'lon'      => 'required|numeric|between:-180,180',
+            'radius'   => 'nullable|numeric|min:0.1|max:100',
             'category' => 'nullable|string|max:191',
             'limit'    => 'nullable|integer|min:1|max:50',
+            'offset'   => 'nullable|integer|min:0',
         ];
 
-        if ($mode === 'nearby') {
-            $rules['lat']    = 'required|numeric|between:-90,90';
-            $rules['lon']    = 'required|numeric|between:-180,180';
-            $rules['radius'] = 'nullable|numeric|min:0.1|max:100';
-            $rules['offset'] = 'nullable|integer|min:0';
-        } else {
-            $rules['city']   = 'required|string|max:191';
-            $rules['cursor'] = 'nullable|integer';
-            $rules['lat']    = 'nullable|numeric|between:-90,90';
-            $rules['lon']    = 'nullable|numeric|between:-180,180';
-        }
-
-        $validator = Validator::make($request->all(), $rules);
+        $validator = Validator::make(
+            $request->all(),
+            $rules
+        );
 
         if ($validator->fails()) {
-            return $this->jsonError($validator->errors()->first(), 422);
+            return $this->jsonError(
+                $validator->errors()->first(),
+                422
+            );
         }
 
-        $category = trim($request->category ?? '');
-        $limit    = (int) ($request->limit ?? 15);
-
-        return $mode === 'nearby'
-            ? $this->searchNearby($request, $category, $limit)
-            : $this->searchDiscover($request, $category, $limit);
-    } catch (\Throwable $th) {
-        return $this->jsonError($th->getMessage());
-    }
-}
-
-/**
- * Discover stores by city. Uses cursor pagination instead of offset pagination.
- */
-private function searchDiscover(Request $request, string $category, int $limit)
-{
-    try {
-        $city   = trim($request->city);
-        $cursor = $request->cursor;
-        $lat = $request->filled('lat') ? (float) $request->lat : null;
-        $lon = $request->filled('lon') ? (float) $request->lon : null;
-        $user = $request->user();
-        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
-
-        $query = Store::query()
-            ->select([
-                'stores.id', 'stores.store_name', 'stores.store_logo',
-                'stores.address', 'stores.description', 'stores.vendor_category',
-                'stores.lat', 'stores.lon', 'stores.placeId', 'stores.city',
-                'static_cities.cityName',
-            ])
-            ->join('static_cities', 'stores.city', '=', 'static_cities.id')
-            ->where('stores.AgencyID', $AgencyID);
-
-        $cityLike = '%' . strtolower($city) . '%';
-        $query->where(function ($q) use ($city, $cityLike) {
-            $q->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
-                ->orWhereRaw('LOWER(stores.address) LIKE ?', [$cityLike]);
-        });
-
-        if ($category !== '') {
-            $query->where('stores.vendor_category', $category);
-        }
-
-        // Optional distance calculation — display-only, doesn't affect sorting/pagination.
-        if (
-            $lat !== null && $lat !== '' &&
-            $lon !== null && $lon !== '' &&
-            strtolower(trim((string) $lat)) !== 'null' &&
-            strtolower(trim((string) $lon)) !== 'null'
-        ) {
-            $query->selectRaw($this->haversineExpression(), [$lat, $lon, $lat]);
-        }
-
-        if (!empty($cursor)) {
-            $query->where('stores.id', '<', (int) $cursor);
-        }
-
-        $rows = $query->orderByDesc('stores.id')->limit($limit + 1)->get();
-        $hasMore = $rows->count() > $limit;
-        if ($hasMore) { $rows = $rows->take($limit); }
-
-        $categories = collect(self::VENDOR_CATEGORIES)->values();
-
-        if ($rows->isEmpty()) {
-            return $this->jsonSuccess('No stores found in ' . $city . '.', [
-                'items'      => [],
-                'nextCursor' => null,
-                'mode'       => 'discover',
-                'categories' => $categories,
-            ]);
-        }
-
-        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(), $AgencyID);
-        $items = $rows->map(fn($store) => $this->formatStore($store, true, $rewardMap))->values();
-
-        return $this->jsonSuccess('Stores fetched successfully.', [
-            'items'      => $items,
-            'nextCursor' => $hasMore ? $rows->last()->id : null,
-            'mode'       => 'discover',
-            'categories' => $categories,
-        ]);
-    } catch (\Throwable $th) {
-        return $this->jsonError($th->getMessage());
-    }
-}
-
-/**
- * Nearby stores. Bounding box -> Haversine -> radius filter -> paginate.
- */
-private function searchNearby(Request $request, string $category, int $limit)
-{
-    try {
         $lat = (float) $request->lat;
         $lon = (float) $request->lon;
-        $radius = (float) ($request->radius ?? 50);
-        $offset = (int) ($request->offset ?? 0);
+
+        // If radius is not passed, default to 50 KM.
+        $radius = $request->filled('radius')
+            ? (float) $request->radius
+            : 50;
+
+        $category = trim(
+            $request->category ?? ''
+        );
+
+        $limit = (int) (
+            $request->limit ?? 15
+        );
+
+        $offset = (int) (
+            $request->offset ?? 0
+        );
+
         $user = $request->user();
-        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
+
+        $AgencyID = $user->UserType == 1
+            ? $user->id
+            : $user->AgencyID;
+
+        /*
+         * ---------------------------------------------------------
+         * Bounding Box
+         * ---------------------------------------------------------
+         *
+         * This is only a performance optimization.
+         * The actual radius is still checked using Haversine below.
+         */
 
         $latDelta = $radius / 111.0;
-        $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
-        $lonDelta = $radius / (111.0 * $cosLat);
-        $minLat = max(-90, $lat - $latDelta);
-        $maxLat = min(90, $lat + $latDelta);
+
+        $cosLat = max(
+            abs(cos(deg2rad($lat))),
+            0.000001
+        );
+
+        $lonDelta = $radius / (
+            111.0 * $cosLat
+        );
+
+        $minLat = max(
+            -90,
+            $lat - $latDelta
+        );
+
+        $maxLat = min(
+            90,
+            $lat + $latDelta
+        );
+
         $minLon = $lon - $lonDelta;
         $maxLon = $lon + $lonDelta;
 
+
+        /*
+         * ---------------------------------------------------------
+         * Base Query
+         * ---------------------------------------------------------
+         */
+
         $query = Store::query()
             ->select([
-                'id', 'store_name', 'store_logo', 'address', 'description',
-                'vendor_category', 'lat', 'lon', 'placeId', 'city',
+                'stores.id',
+                'stores.store_name',
+                'stores.store_logo',
+                'stores.address',
+                'stores.description',
+                'stores.vendor_category',
+                'stores.lat',
+                'stores.lon',
+                'stores.placeId',
+                'stores.city',
             ])
-            ->whereNotNull('lat')
-            ->whereNotNull('lon')
-            ->where('AgencyID', $AgencyID)
-            ->whereBetween('lat', [$minLat, $maxLat])
-            ->whereBetween('lon', [$minLon, $maxLon]);
+            ->whereNotNull('stores.lat')
+            ->whereNotNull('stores.lon')
+            ->where(
+                'stores.AgencyID',
+                $AgencyID
+            )
+            ->whereBetween(
+                'stores.lat',
+                [
+                    $minLat,
+                    $maxLat
+                ]
+            )
+            ->whereBetween(
+                'stores.lon',
+                [
+                    $minLon,
+                    $maxLon
+                ]
+            );
+
+
+        /*
+         * ---------------------------------------------------------
+         * Category Filter
+         * ---------------------------------------------------------
+         */
 
         if ($category !== '') {
-            $query->where('vendor_category', $category);
+            $query->where(
+                'stores.vendor_category',
+                $category
+            );
         }
 
-        $query->selectRaw($this->haversineExpression(), [$lat, $lon, $lat]);
-        $query->having('distance_km', '<=', $radius);
 
-        $rows = $query->orderBy('distance_km')->orderBy('id')
-            ->offset($offset)->limit($limit + 1)->get();
+        /*
+         * ---------------------------------------------------------
+         * Exact Haversine Distance
+         * ---------------------------------------------------------
+         *
+         * Distance is returned as distance_km.
+         */
+
+        $query->selectRaw(
+            $this->haversineExpression(
+                'stores.lat',
+                'stores.lon'
+            ),
+            [
+                $lat,
+                $lon,
+                $lat
+            ]
+        );
+
+
+        /*
+         * ---------------------------------------------------------
+         * Exact Radius Filter
+         * ---------------------------------------------------------
+         *
+         * Bounding box alone is not enough.
+         * This ensures stores are actually within
+         * the requested radius.
+         */
+
+        $query->having(
+            'distance_km',
+            '<=',
+            $radius
+        );
+
+
+        /*
+         * ---------------------------------------------------------
+         * Sorting
+         * ---------------------------------------------------------
+         *
+         * Nearest store first.
+         * ID provides stable ordering when distances are equal.
+         */
+
+        $query
+            ->orderBy(
+                'distance_km',
+                'asc'
+            )
+            ->orderBy(
+                'stores.id',
+                'asc'
+            );
+
+
+        /*
+         * ---------------------------------------------------------
+         * Pagination
+         * ---------------------------------------------------------
+         */
+
+        $rows = $query
+            ->offset($offset)
+            ->limit($limit + 1)
+            ->get();
 
         $hasMore = $rows->count() > $limit;
-        if ($hasMore) { $rows = $rows->take($limit); }
 
-        $categories = collect(self::VENDOR_CATEGORIES)->values();
-
-        // No stores at all in this radius (only meaningful on the first page).
-        if ($rows->isEmpty() && $offset === 0) {
-            return $this->jsonSuccess(self::NO_SERVICE_MESSAGE, [
-                'items'      => [],
-                'nextOffset' => null,
-                'mode'       => 'nearby',
-                'categories' => $categories,
-            ]);
+        if ($hasMore) {
+            $rows = $rows->take($limit);
         }
 
-        $rewardMap = LoyaltyReward::getBestRewardsForStores($rows->pluck('id')->toArray(), $AgencyID);
-        $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
 
-        return $this->jsonSuccess('Nearby stores fetched successfully.', [
-            'items'      => $items,
-            'nextOffset' => $hasMore ? $offset + $limit : null,
-            'mode'       => 'nearby',
-            'categories' => $categories,
-        ]);
+        /*
+         * ---------------------------------------------------------
+         * Categories
+         * ---------------------------------------------------------
+         */
+
+        $categories = collect(
+            self::VENDOR_CATEGORIES
+        )->values();
+
+
+        /*
+         * ---------------------------------------------------------
+         * No Stores Found
+         * ---------------------------------------------------------
+         *
+         * Only show the service-area message on the
+         * first page. For subsequent pages, simply
+         * return an empty result.
+         */
+
+        if (
+            $rows->isEmpty() &&
+            $offset === 0
+        ) {
+            return $this->jsonSuccess(
+                self::NO_SERVICE_MESSAGE,
+                [
+                    'items' => [],
+
+                    'nextOffset' => null,
+
+                    'radiusKm' => $radius,
+
+                    'categories' => $categories,
+                ]
+            );
+        }
+
+
+        /*
+         * ---------------------------------------------------------
+         * Rewards
+         * ---------------------------------------------------------
+         */
+
+        $rewardMap = LoyaltyReward::getBestRewardsForStores(
+            $rows->pluck('id')->toArray(),
+            $AgencyID
+        );
+
+
+        /*
+         * ---------------------------------------------------------
+         * Format Stores
+         * ---------------------------------------------------------
+         */
+
+        $items = $rows
+            ->map(
+                fn ($store) => $this->formatStore(
+                    $store,
+                    false,
+                    $rewardMap
+                )
+            )
+            ->values();
+
+
+        /*
+         * ---------------------------------------------------------
+         * Response
+         * ---------------------------------------------------------
+         */
+
+        return $this->jsonSuccess(
+            'Stores fetched successfully.',
+            [
+                'items' => $items,
+
+                'nextOffset' => $hasMore
+                    ? $offset + $limit
+                    : null,
+
+                'radiusKm' => $radius,
+
+                'categories' => $categories,
+            ]
+        );
+
     } catch (\Throwable $th) {
-        return $this->jsonError($th->getMessage());
+
+        return $this->jsonError(
+            $th->getMessage()
+        );
     }
 }
 
