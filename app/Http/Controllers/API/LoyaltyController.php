@@ -305,9 +305,9 @@ class LoyaltyController extends Controller
             }
             if (empty($request->storeToken) && !empty($request->store_id)) {
                 $store = Store::where('AgencyID', $AgencyID)->where('id', $request->store_id)->first();
-                // $token = $store->createToken('store-token')->plainTextToken;
-                // $request->merge(['storeToken' => $token]);
-                $request->merge(['storeToken' => '131|6q2oe0Ok0LHJlu50FTVEeFcUCqu0rzzJeuJMd3nfc9533c6d']);
+                $token = $store->createToken('store-token')->plainTextToken;
+                $request->merge(['storeToken' => $token]);
+                // $request->merge(['storeToken' => '131|6q2oe0Ok0LHJlu50FTVEeFcUCqu0rzzJeuJMd3nfc9533c6d']);
             }
 
             $accessToken = PersonalAccessToken::findToken($request->storeToken);
@@ -1162,10 +1162,10 @@ class LoyaltyController extends Controller
                     'description' => 'required',
                     'maxdiscountvalue' => 'required',
                     // Reward deal values
-                    'ordervalue'=> 'required|numeric|gt:0',
+                    'ordervalue' => 'required|numeric|gt:0',
                     'dealvalue' => 'required|numeric|gt:0',
                     'custvalue' => 'required|numeric|min:0|max:100',
-                    'ownervalue'=> 'required|numeric|min:0|max:100',
+                    'ownervalue' => 'required|numeric|min:0|max:100',
                 ]);
                 if ($validator->fails()) {
                     $errors = json_encode($validator->messages());
@@ -1186,18 +1186,18 @@ class LoyaltyController extends Controller
                     ]);
                 } else {
 
-                $customerValue = (float) $request->custvalue;
-                $ownerValue = (float) $request->ownervalue;
+                    $customerValue = (float) $request->custvalue;
+                    $ownerValue = (float) $request->ownervalue;
 
-                if (($customerValue + $ownerValue) != 100) {
-                    return response()->json([
-                        'status' => [
-                            'success' => false,
-                            'httpStatus' => 422,
-                        ],
-                        'message' => 'Value for customer and Value for owner must total 100%.'
-                    ]);
-                }
+                    if (($customerValue + $ownerValue) != 100) {
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 422,
+                            ],
+                            'message' => 'Value for customer and Value for owner must total 100%.'
+                        ]);
+                    }
                     $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
                     $reward_id = (isset($request->reward_id) && $request->reward_id > 0) ? $request->reward_id : 0;
                     $parent_id = (isset($request->parent_id) && $request->parent_id > 0) ? $request->parent_id : 0;
@@ -1875,7 +1875,7 @@ class LoyaltyController extends Controller
         )
             ->join('static_cities', 'stores.city', '=', 'static_cities.id')
             ->whereRaw('LOWER(static_cities.cityName) = ?', [strtolower($city)])
-            ->where('stores.AgencyID',$AgencyID);
+            ->where('stores.AgencyID', $AgencyID);
 
         if ($country !== '') {
             $query->whereRaw('LOWER(static_cities.countryName) = ?', [strtolower($country)]);
@@ -1948,8 +1948,8 @@ class LoyaltyController extends Controller
             'stores.store_name',
             'stores.address'
         )
-            ->join('static_cities','stores.city','=','static_cities.id')
-            ->where('stores.AgencyID',$AgencyID);
+            ->join('static_cities', 'stores.city', '=', 'static_cities.id')
+            ->where('stores.AgencyID', $AgencyID);
 
         if ($keyword !== '') {
             $like = '%' . strtolower($keyword) . '%';
