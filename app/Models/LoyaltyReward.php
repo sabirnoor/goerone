@@ -283,18 +283,15 @@ class LoyaltyReward extends Model
  */
     private static function effectiveCustomerValue($reward): float
     {
-        $raw = (float) $reward->dealvalue * ((float) $reward->custvalue / 100);
+        $share = (float) $reward->custvalue / 100;
 
-        // Fixed deal: the raw value is an amount, so it can be compared with the slab cap.
-        // Use the best-case (highest) slab because no order amount is known when ranking.
         if ((int) $reward->dealtype === 1) {
-            $cap = self::highestSlabDiscount($reward);
-            if ($cap > 0) {
-                $raw = min($raw, $cap);
-            }
+            $cap  = self::highestSlabDiscount($reward);
+            $pool = $cap > 0 ? min((float) $reward->dealvalue, $cap) : (float) $reward->dealvalue;
+            return $pool * $share;
         }
 
-        return $raw;
+        return (float) $reward->dealvalue * $share; // % deal, compared as a percentage
     }
 
     /** Highest cap across slabs, for listing/ranking where no order amount is known. */
