@@ -1,3 +1,8 @@
 ALTER TABLE reward
 ADD COLUMN maxdiscount_slabs JSON NULL
 AFTER maxdiscountvalue;
+
+ALTER TABLE stores
+    ADD COLUMN is_halal BOOLEAN NOT NULL DEFAULT FALSE AFTER vendor_category,
+    ADD COLUMN food_type VARCHAR(20) NULL AFTER is_halal,
+    ADD COLUMN alcohol_allowed BOOLEAN NOT NULL DEFAULT FALSE AFTER food_type;

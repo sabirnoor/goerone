@@ -21,6 +21,9 @@ class Store extends Authenticatable
         'product_types',
         'enquiry_enabled',
         'payment_enabled',
+        'is_halal',
+        'food_type',
+        'alcohol_allowed',
     ];
 
     protected $hidden = [
@@ -33,6 +36,8 @@ class Store extends Authenticatable
         'product_types' => 'array',
         'enquiry_enabled' => 'boolean',
         'payment_enabled' => 'boolean',
+        'is_halal' => 'boolean',
+        'alcohol_allowed' => 'boolean',
     ];
 
     public function settlements()
