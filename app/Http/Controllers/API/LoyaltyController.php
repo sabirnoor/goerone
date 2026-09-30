@@ -1284,12 +1284,12 @@ class LoyaltyController extends Controller
                     'is_active' => 'required',
                     'reward_name' => 'required|max:191',
                     'description' => 'required',
-                    'maxdiscountvalue' => 'required',
                     // Reward deal values
                     'ordervalue' => 'required|numeric|gt:0',
                     'dealvalue' => 'required|numeric|gt:0',
                     'custvalue' => 'required|numeric|min:0|max:100',
                     'ownervalue' => 'required|numeric|min:0|max:100',
+                    'maxdiscount_slabs' => 'required',
                 ]);
                 if ($validator->fails()) {
                     $errors = json_encode($validator->messages());
@@ -1322,6 +1322,20 @@ class LoyaltyController extends Controller
                             'message' => 'Value for customer and Value for owner must total 100%.'
                         ]);
                     }
+
+                    [$slabs, $slabError] = LoyaltyReward::normalizeSlabs(
+                        $request->maxdiscount_slabs,
+                        (int) $request->dealtype,
+                        (float) $request->dealvalue
+                    );
+                    if ($slabError) {
+                        DB::rollback();
+                        return response()->json([
+                            'status' => ['success' => false, 'httpStatus' => 422],
+                            'message' => $slabError,
+                        ]);
+                    }
+
                     $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
                     $reward_id = (isset($request->reward_id) && $request->reward_id > 0) ? $request->reward_id : 0;
                     $parent_id = (isset($request->parent_id) && $request->parent_id > 0) ? $request->parent_id : 0;
@@ -1349,7 +1363,7 @@ class LoyaltyController extends Controller
                                 'custvalue'         => isset($request->custvalue) ? (float)$request->custvalue : 0,
                                 'ordervalue'         => isset($request->ordervalue) ? (float)$request->ordervalue : 0,
                                 'rewardvalue'         => isset($request->rewardvalue) ? (float)$request->rewardvalue : 0,
-                                'maxdiscountvalue'    => isset($request->maxdiscountvalue) ? (float)$request->maxdiscountvalue : 0,
+                                'maxdiscount_slabs' => json_encode($slabs),
                                 'max_reward_value'    => isset($request->max_reward_value) ? (float)$request->max_reward_value : 0,
                             ];
                             $imagePath = '';

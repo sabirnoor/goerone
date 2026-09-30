@@ -13,6 +13,10 @@ class LoyaltyReward extends Model
         '*',
     ];
 
+    protected $casts = [
+    'maxdiscount_slabs' => 'array',
+    ];
+
     public static function getloyaltyReward($User, $perPage, $post = array())
     {
         // $responsedata = LoyaltyReward::select(
@@ -235,8 +239,8 @@ class LoyaltyReward extends Model
         'reward.ordervalue',
         'reward.start_date',
         'reward.end_date',
-        'reward.maxdiscountvalue',
         'reward.max_reward_value',
+        'reward.maxdiscount_slabs'
     )
         ->join('stores_mapping', function ($join) {
             $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
@@ -277,16 +281,31 @@ class LoyaltyReward extends Model
  *
  * maxdiscountvalue, when set, caps the result regardless of dealtype.
  */
-private static function effectiveCustomerValue($reward): float
-{
-    $raw = (float) $reward->dealvalue * ((float) $reward->custvalue / 100);
+    private static function effectiveCustomerValue($reward): float
+    {
+        $raw = (float) $reward->dealvalue * ((float) $reward->custvalue / 100);
 
-    if (!empty($reward->maxdiscountvalue) && (float) $reward->maxdiscountvalue > 0) {
-        $raw = min($raw, (float) $reward->maxdiscountvalue);
+        // Fixed deal: the raw value is an amount, so it can be compared with the slab cap.
+        // Use the best-case (highest) slab because no order amount is known when ranking.
+        if ((int) $reward->dealtype === 1) {
+            $cap = self::highestSlabDiscount($reward);
+            if ($cap > 0) {
+                $raw = min($raw, $cap);
+            }
+        }
+
+        return $raw;
     }
 
-    return $raw;
-}
+    /** Highest cap across slabs, for listing/ranking where no order amount is known. */
+    public static function highestSlabDiscount($reward): float
+    {
+        $slabs = $reward->maxdiscount_slabs;
+        if (is_string($slabs)) {
+            $slabs = json_decode($slabs, true);
+        }
+        return (float) collect($slabs)->max('max_discount');
+    }
 
     public static function getCustomerReward($User, $post = array())
     {
@@ -379,5 +398,55 @@ private static function effectiveCustomerValue($reward): float
             ->paginate($perPage, ['*'], 'reward_page', $page);
 
         return $responsedata;
+    }
+
+    /**
+    * Validate slabs and rebuild them contiguously.
+    * Input rows: [{to, max_discount}, ...] (last row's "to" is ignored = "and above")
+    * @return array [$slabs|null, $error|null]
+    */
+    public static function normalizeSlabs($raw, int $dealtype, float $dealvalue): array
+    {
+    $rows = is_string($raw) ? json_decode($raw, true) : $raw;
+    if (!is_array($rows) || empty($rows)) {
+        return [null, 'Add at least one maximum discount slab.'];
+    }
+
+    $rows   = array_values($rows);
+    $count  = count($rows);
+    $prevTo = 0.0;
+    $out    = [];
+
+    foreach ($rows as $i => $row) {
+        $n        = $i + 1;
+        $discount = $row['max_discount'] ?? null;
+
+        if (!is_numeric($discount) || (float) $discount <= 0) {
+            return [null, "Slab {$n}: enter a maximum discount greater than 0."];
+        }
+        $discount = (float) $discount;
+
+        // Fixed deal: max discount can never exceed the total value
+        if ($dealtype === 1 && $discount > $dealvalue) {
+            return [null, "Slab {$n}: max discount cannot be more than the total value ({$dealvalue}) for fixed deals."];
+        }
+
+        if ($i === $count - 1) {
+            $to = null; // open-ended last slab
+        } else {
+            $to = $row['to'] ?? null;
+            if (!is_numeric($to) || (float) $to <= $prevTo) {
+                return [null, "Slab {$n}: 'up to' value must be greater than {$prevTo}."];
+            }
+            $to = (float) $to;
+        }
+
+        $out[] = ['from' => $prevTo, 'to' => $to, 'max_discount' => $discount];
+        if ($to !== null) {
+            $prevTo = $to;
+        }
+    }
+
+    return [$out, null];
     }
 }

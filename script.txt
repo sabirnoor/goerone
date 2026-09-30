@@ -1,0 +1,3 @@
+ALTER TABLE reward
+ADD COLUMN maxdiscount_slabs JSON NULL
+AFTER maxdiscountvalue;
