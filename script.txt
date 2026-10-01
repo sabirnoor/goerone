@@ -6,3 +6,17 @@ ALTER TABLE stores
     ADD COLUMN is_halal BOOLEAN NOT NULL DEFAULT FALSE AFTER vendor_category,
     ADD COLUMN food_type VARCHAR(20) NULL AFTER is_halal,
     ADD COLUMN alcohol_allowed BOOLEAN NOT NULL DEFAULT FALSE AFTER food_type;
+
+ALTER TABLE vouchers
+  ADD COLUMN redemption_type TINYINT      NOT NULL DEFAULT 3 COMMENT '1=online, 2=offline, 3=both' AFTER customer_type,
+  ADD COLUMN customer_share  DECIMAL(5,2) NOT NULL DEFAULT 0 AFTER max_discount_value,
+  ADD COLUMN owner_share     DECIMAL(5,2) NOT NULL DEFAULT 0 AFTER customer_share;
+
+  CREATE TABLE voucher_memberships (
+  voucher_id BIGINT UNSIGNED NOT NULL,
+  program_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (voucher_id, program_id),
+  KEY idx_vm_program (program_id)
+) ENGINE=InnoDB;
+
+ALTER TABLE vouchers MODIFY COLUMN customer_type INT NULL;

@@ -36,16 +36,52 @@ class VouchersController extends Controller
         $post = $request->all();
 
         if ($post && $request->isMethod('post')) {
+              // memberships arrive as a JSON string (FormData), same pattern as stores_id
+            $rawMemberships = $request->memberships;
+            $membershipIds = is_array($rawMemberships) ? $rawMemberships : (json_decode($rawMemberships ?? '[]', true) ?: []);
+            $membershipIds = array_values(array_unique(array_filter(array_map('intval', $membershipIds))));
+
             $validator = Validator::make($request->all(), [
                 'stores_id' => 'required',
-                'customer_type' => 'required',
+                'customer_type' => 'nullable|integer',
                 'no_of_voucher' => 'required',
                 'discount_value' => 'required',
                 'voucher_name' => 'required',
                 'terms_condition' => 'required',
-                'voucher_price' => 'required',
-                'max_discount_value' => 'required',
+                'voucher_price' => 'required|numeric',
+                'max_discount_value' => 'required|numeric',
+                'redemption_type' => 'required|in:1,2,3', // 1 = online, 2 = offline, 3 = both
+                'customer_share' => 'required|numeric|min:0|max:100',
+                'owner_share' => 'required|numeric|min:0|max:100',
             ]);
+
+            $validator->after(function ($v) use ($request, $membershipIds) {
+                $errs = $v->errors();
+
+                if (count($membershipIds) === 0) {
+                    $errs->add('memberships', 'Select at least one membership');
+                } elseif (DB::table('loyalty_program')->whereIn('program_id', $membershipIds)->count() !== count($membershipIds)) {
+                    $errs->add('memberships', 'Invalid membership selected');
+                }
+
+                if (! $errs->hasAny(['voucher_price', 'max_discount_value'])) {
+                    $max = (float) $request->max_discount_value;
+                    if ($max > (float) $request->voucher_price) {
+                        $errs->add('max_discount_value', 'Max discount value cannot be greater than voucher price');
+                    }
+                    // discount_type 1 = fixed, 2 = percentage
+                    if ((int) $request->discount_type === 1 && $max > (float) $request->discount_value) {
+                        $errs->add('max_discount_value', 'Max discount value cannot be greater than the fixed discount value');
+                    }
+                }
+
+                if (! $errs->hasAny(['customer_share', 'owner_share'])) {
+                    if (abs(((float) $request->customer_share + (float) $request->owner_share) - 100) > 0.001) {
+                        $errs->add('customer_share', 'Customer share and owner share must total 100%');
+                    }
+                }
+            });
+
             if ($validator->fails()) {
                 $errors = json_encode($validator->messages());
                 $errorArray = [];
@@ -88,6 +124,9 @@ class VouchersController extends Controller
                                 $dataSet = [
                                     'store_id' => $vl['id'],
                                     'customer_type' => $request->customer_type,
+                                    'redemption_type' => (int) $request->redemption_type,
+                                    'customer_share' => $request->customer_share,
+                                    'owner_share' => $request->owner_share,
                                     'AgencyID' => $AgencyID,
                                     'UserSysId' => $UserSysId,
                                     'no_of_voucher' => $request->no_of_voucher,
@@ -106,8 +145,13 @@ class VouchersController extends Controller
 
                                 if (!$exists && $voucher_id == 0) {
                                     $Entry = Vouchers::create($dataSet);
+                                    $this->syncMemberships($Entry->id, $membershipIds);
                                 } elseif ($voucher_id > 0) {
-                                    Vouchers::where('id', $voucher_id)->where('AgencyID', $AgencyID)->where('store_id', $vl['id'])->update($dataSet);
+                                    $row = Vouchers::where('id', $voucher_id)->where('AgencyID', $AgencyID)->where('store_id', $vl['id'])->first();
+                                    if ($row) {
+                                        $row->update($dataSet);
+                                        $this->syncMemberships($row->id, $membershipIds);
+                                    }
                                 } else {
                                     return [
                                         'status' => [
@@ -212,5 +256,15 @@ class VouchersController extends Controller
 
             die('Bad request');
         }
+    }
+
+      /** Replace the voucher's membership rows */
+    private function syncMemberships($voucherId, array $membershipIds): void
+    {
+        DB::table('voucher_memberships')->where('voucher_id', $voucherId)->delete();
+        DB::table('voucher_memberships')->insert(array_map(
+            fn($programId) => ['voucher_id' => $voucherId, 'program_id' => $programId],
+            $membershipIds
+        ));
     }
 }

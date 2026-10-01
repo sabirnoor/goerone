@@ -33,7 +33,10 @@ class Vouchers extends Model
         'valid_from',
         'valid_to',
         'is_active',
-        'terms_condition'
+        'terms_condition',
+        'redemption_type',
+        'customer_share',
+        'owner_share',
     ];
 
     protected $casts = [
@@ -41,6 +44,8 @@ class Vouchers extends Model
         'discount_value' => 'decimal:2',
         'max_discount_value' => 'decimal:2',
         'required_value' => 'decimal:2',
+        'customer_share' => 'decimal:2',
+        'owner_share' => 'decimal:2',
     ];
     /**
      * Relationships
@@ -85,6 +90,25 @@ class Vouchers extends Model
         return $this->belongsTo(User::class, 'AgencyID');
     }
 
+    /** Attach memberships (ids) / membership_names to each voucher of a paginated result */
+    protected static function withMemberships($paginator)
+    {
+        $rows = DB::table('voucher_memberships as vm')
+            ->join('loyalty_program as lp', 'lp.program_id', '=', 'vm.program_id')
+            ->whereIn('vm.voucher_id', $paginator->getCollection()->pluck('id'))
+            ->get(['vm.voucher_id', 'vm.program_id', 'lp.program_name'])
+            ->groupBy('voucher_id');
+
+        $paginator->getCollection()->transform(function ($v) use ($rows) {
+            $m = $rows->get($v->id, collect());
+            $v->memberships = $m->pluck('program_id')->map(fn($i) => (int) $i)->values();
+            $v->membership_names = $m->pluck('program_name')->implode(', ');
+            return $v;
+        });
+
+        return $paginator;
+    }
+
     public static function getVoucher($User, $perPage, $post = array())
     {
 
@@ -108,6 +132,9 @@ class Vouchers extends Model
             'vouchers.is_active',
             'vouchers.terms_condition',
             'vouchers.created_at',
+            'vouchers.redemption_type',
+            'vouchers.customer_share',
+            'vouchers.owner_share',
             'stores.store_name',
             'stores.email as store_email',
         )
@@ -122,7 +149,7 @@ class Vouchers extends Model
             ->orderBy('vouchers.id', 'DESC')
             ->paginate($perPage);
 
-        return $responsedata;
+        return self::withMemberships($responsedata);
     }
     public static function getVoucherAPI($User, $perPage, $post = array())
     {
@@ -154,20 +181,20 @@ class Vouchers extends Model
             'vouchers.is_active',
             'vouchers.terms_condition',
             'vouchers.created_at',
+            'vouchers.redemption_type',
+            'vouchers.customer_share',
             'stores.store_name',
             'stores.email as store_email',
         )->leftJoin('stores', 'stores.id', '=', 'vouchers.store_id')
             ->where(function ($query) use ($User) {
                 $query->where('vouchers.AgencyID', $User->AgencyID);
             })->where(function ($query) use ($program_id) {
-                $customerTypes = match ($program_id) {
-                    0 => [3],          // only customer_type = 3
-                    6 => [2, 3],        // include 2 + 3
-                    3 => [1, 3],        // include 1 + 3
-                    default => null
-                };
-                $query->when($customerTypes, function ($q) use ($customerTypes) {
-                    $q->whereIn('vouchers.customer_type', $customerTypes);
+                // only vouchers tied to the customer's membership (program_id 0 = no membership -> none)
+                $query->whereExists(function ($q) use ($program_id) {
+                    $q->select(DB::raw(1))
+                        ->from('voucher_memberships')
+                        ->whereColumn('voucher_memberships.voucher_id', 'vouchers.id')
+                        ->where('voucher_memberships.program_id', $program_id);
                 });
             })
             ->orderBy('vouchers.id', 'DESC')
@@ -195,7 +222,8 @@ class Vouchers extends Model
             'vouchers.valid_from',
             'vouchers.valid_to',
             'vouchers.is_active',
-            'vouchers.terms_condition'
+            'vouchers.terms_condition',
+            'vouchers.redemption_type'
         )
             ->where('vouchers.store_id', $storeId)
             ->where('vouchers.AgencyID', $AgencyID)
