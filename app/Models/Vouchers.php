@@ -223,7 +223,9 @@ class Vouchers extends Model
             'vouchers.valid_to',
             'vouchers.is_active',
             'vouchers.terms_condition',
-            'vouchers.redemption_type'
+            'vouchers.redemption_type',
+            'vouchers.customer_share',
+            'vouchers.sold_count'
         )
             ->where('vouchers.store_id', $storeId)
             ->where('vouchers.AgencyID', $AgencyID)
@@ -237,7 +239,9 @@ class Vouchers extends Model
                     ->orWhere('vouchers.valid_to', '>=', $now);
             });
 
-        return $query->orderBy('vouchers.id', 'DESC')
-            ->paginate($perPage, ['*'], 'voucher_page', $page);
+        return self::withMemberships(
+        $query->orderBy('vouchers.id', 'DESC')
+            ->paginate($perPage, ['*'], 'voucher_page', $page)
+        );
     }
 }
