@@ -49,32 +49,53 @@ class LoyaltyController extends Controller
         $this->otpService = $otpService;
         $this->rewardService = $rewardService;
     }
+    public function getMaxDiscount(array $slabs, float $amount): float
+    {
+        foreach ($slabs as $slab) {
+            $from = (float) $slab['from'];
+            $to   = $slab['to'] !== '' && $slab['to'] !== null ? (float) $slab['to'] : null;
 
+            if ($amount >= $from && ($to === null || $amount < $to)) {
+                return (float) $slab['max_discount'];
+            }
+        }
+
+        return 0;
+    }
     public function redeemReward(Request $request)
     {
         $user = $request->user();
         $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+        if (isset($request->mep) && $request->mep == 1) {
+            $validator = Validator::make($request->all(), [
+                'ref' => 'required',
+                'membershipId' => 'required|integer|exists:loyalty_program,program_id',
 
-        $validator = Validator::make($request->all(), [
-            'order_amount' => 'required|integer|min:1',
-            'membershipId' => 'nullable|integer||exists:loyalty_program,program_id',
-            'reward_id' => [
-                'required',
-                'integer',
-                Rule::exists(LoyaltyReward::class, 'reward_id')
-                    ->where(fn($q) => $q->where('AgencyID', $AgencyID))
-            ],
-            'store_id' => [
-                'required',
-                'integer',
-                Rule::exists(Store::class, 'id')
-                    ->where(fn($q) => $q->where('AgencyID', $AgencyID))
-            ]
+            ]);
+        } else {
+            $validator = Validator::make($request->all(), [
+                'ref' => 'required',
+                'order_amount' => 'required|integer|min:1',
+                'membershipId' => 'nullable|integer||exists:loyalty_program,program_id',
+                'reward_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists(LoyaltyReward::class, 'reward_id')
+                        ->where(fn($q) => $q->where('AgencyID', $AgencyID))
+                ],
+                'store_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists(Store::class, 'id')
+                        ->where(fn($q) => $q->where('AgencyID', $AgencyID))
+                ]
 
-        ], [
-            'amount.min' => 'The discount amount must be greater than 1.',
-            'store_id' => 'Selected store is not found',
-        ]);
+            ], [
+                'amount.min' => 'The discount amount must be greater than 1.',
+                'store_id' => 'Selected store is not found',
+            ]);
+        }
+
 
         if ($validator->fails()) {
             $errors = json_encode($validator->messages());
@@ -95,6 +116,7 @@ class LoyaltyController extends Controller
                 'error' => $validator->errors()
             ]);
         }
+
         DB::beginTransaction();
         try {
             $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
@@ -108,7 +130,8 @@ class LoyaltyController extends Controller
                 $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
 
                 $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
-
+                // pr($program_id);
+                // die;
                 if ($program_id === 0) {
                     $post['cardNumbers'] = [];
                     $post['keyword'] = '';
@@ -303,6 +326,18 @@ class LoyaltyController extends Controller
                         $this->rewardService->addPoints($walletInsert);
                     }
                     DB::commit();
+                    if (isset($request->mep) && $request->mep == 1) {
+                        return response()->json([
+                            'status' => [
+                                'success' => true,
+                                'httpStatus' => 200,
+                            ],
+                            'message' => 'Membership processed success.',
+                            'mep' => $request->mep ?? 0,
+                            'rdm' => $request->rdm ?? 0,
+                            'ref' => $request->ref ?? null,
+                        ]);
+                    }
                 } else {
                     $card_id = $checkUserCardExist->card_id;
                 }
@@ -338,7 +373,7 @@ class LoyaltyController extends Controller
             }
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
-            $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
+            $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscount_slabs', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
             $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
             $rewardtype = isset($Reward->rewardtype) ? $Reward->rewardtype : 0;
             $ordervalue = isset($Reward->ordervalue) ? $Reward->ordervalue : 0;
@@ -347,7 +382,8 @@ class LoyaltyController extends Controller
             $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
             $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
             $max_reward_value = isset($Reward->max_reward_value) ? $Reward->max_reward_value : 0;
-            $maxdiscountvalue = isset($Reward->maxdiscountvalue) ? $Reward->maxdiscountvalue : 0;
+            $maxdiscountvalue = isset($Reward->maxdiscount_slabs) ? $Reward->maxdiscount_slabs : 0;
+            $maxdiscountvalue = $this->getMaxDiscount($maxdiscountvalue, $request->order_amount);
             if ($dealtype === 0 && !($request->order_amount < $ordervalue)) {
                 $discount = (($request->order_amount * (float)$dealvalue) / 100);
                 $discountOwner = (($request->order_amount * (float)$ownervalue) / 100);
@@ -379,7 +415,7 @@ class LoyaltyController extends Controller
                 $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
             }
 
-            // pr($request->all());
+            // pr($maxdiscountvalue);
 
             // pr($discount);
             // pr($discountOwner);
@@ -619,7 +655,10 @@ class LoyaltyController extends Controller
                                     'card_id' => $request->card_id,
                                     'reward_id' => $request->reward_id,
                                     'StoreId' => $stores_id
-                                ]
+                                ],
+                                'mep' => $request->mep ?? 0,
+                                'rdm' => $request->rdm ?? 0,
+                                'ref' => $request->ref ?? null,
                             ], 200);
                         } else {
                             return response()->json([
