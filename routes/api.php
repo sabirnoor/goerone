@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
+    
 });
 
 Route::middleware('apiKey')->group(function () {
@@ -129,6 +130,8 @@ Route::middleware('apiKey')->group(function () {
     Route::any('/payment/response', [IndexController::class, 'atomresponse']);
 
     Route::post('/loyalty/store-reward-vouchers', [LoyaltyController::class, 'storeRewardVouchers']);
+
+    Route::post('/reward/reward-ledger', [WalletController::class, 'RewardLedger']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
