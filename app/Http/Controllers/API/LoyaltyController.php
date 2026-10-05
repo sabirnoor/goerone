@@ -131,8 +131,10 @@ class LoyaltyController extends Controller
             $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
             $card_id = isset($checkUserCardExist->card_id) ? $checkUserCardExist->card_id : 0;
 
+
             if (isset($request->membershipId) && $request->membershipId > 0) {
                 $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
+                $welcome_coin = isset($LoyaltyProgram->welcome_coin) ? $LoyaltyProgram->welcome_coin : 0;
                 $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
 
                 if ($program_id === 0) {
@@ -325,8 +327,22 @@ class LoyaltyController extends Controller
                         ];
                         $walletInsert['AgencyID'] = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
                         $walletInsert['UserSysId'] = $request->user()->id;
-                        $walletInsert['PlanType'] = 7;
+                        $walletInsert['PlanType'] = 11;
                         $this->rewardService->addPoints($walletInsert);
+                    }
+                    if ($welcome_coin > 0) {
+                        $RewardInsert = [
+                            'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                            'UserSysId' =>  $request->user()->id,
+                            "payer_id" => $AgencyID,
+                            "payee_id" => $user->id,
+                            "points" => $welcome_coin,
+                            "RewardMode" => "Welcome",
+                            'PlanType' => 10,
+                            'ReferenceNo' => $request->ref ?? '',
+                            'description' => 'GoerOne Membership Welcome Reward',
+                        ];
+                        $this->rewardService->addPoints($RewardInsert);
                     }
                     DB::commit();
                     if (isset($request->mep) && $request->mep == 1) {

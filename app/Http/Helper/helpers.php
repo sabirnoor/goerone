@@ -115,6 +115,7 @@ function PlanType()
         8 => "Transfer",
         9 => "Visa",
         10 => "Loyalty Payment",
+        11 => "Referral Earning",
     ];
 }
 

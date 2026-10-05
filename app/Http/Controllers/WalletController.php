@@ -19,7 +19,7 @@ class WalletController extends Controller
     ) {
         $this->rewardService = $rewardService;
     }
-    
+
     public function getRewardSummary(Request $request)
     {
         $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
@@ -284,6 +284,76 @@ class WalletController extends Controller
         }
     }
     public function RewardLedger(Request $request)
+    {
+        $user = $request->user();
+        $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
+        $mode = (isset($request->mode) && $request->mode > 0) ? $request->mode : '';
+        if (isset($request->mode) && $request->mode !== 'web') {
+            $validator = Validator::make($request->all(), [
+                'customer_id' => [
+                    'required',
+                    'integer',
+                    'exists:users,id',
+                    Rule::exists('users', 'id')->where(function ($query) use ($user) {
+                        $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+                        return $query->where('AgencyID', $AgencyID)->where('WalletStatus', 1);
+                    }),
+                ]
+            ]);
+            if ($validator->fails()) {
+                $errors = json_encode($validator->messages());
+                $errorArray = [];
+                if (json_decode($errors, 1)) {
+                    foreach (json_decode($errors, 1) as $err) {
+                        foreach ($err as $errs) {
+                            $errorArray[] = ($errs);
+                        }
+                    }
+                }
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 422,
+                    ],
+                    'message' => implode(',', $errorArray),
+                    'error' => $validator->messages(),
+                    'mode' => $request->mode,
+                ]);
+            }
+        }
+
+        try {
+            $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
+            $UserSysId = $request->user()->id;
+            $validated = $request->all();
+
+            $validated['AgencyID'] = $AgencyID;
+            $validated['UserSysId'] = $UserSysId;
+            $validated['FromDate'] = (isset($request->FromDate)) ? $request->FromDate : null;
+            $validated['ToDate'] = (isset($request->ToDate)) ? $request->ToDate : null;
+            $validated['bookingID'] = (isset($request->bookingID)) ? $request->bookingID : null;
+            return DB::transaction(function () use ($validated, $perPage) {
+                $result = $this->rewardService->getCustomerLedger($validated['customer_id'] ?? null, $validated['AgencyID'], $perPage, $validated);
+                return response()->json([
+                    'status' => [
+                        'success' => true,
+                        'httpStatus' => 200,
+                    ],
+                    'data' => $result,
+                    'message' => 'Reward ledger successful'
+                ]);
+            });
+        } catch (\Throwable $th) {
+            return [
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 201,
+                ],
+                'message' => $th->getMessage(),
+            ];
+        }
+    }
+    public function RewardLedgerTemp(Request $request)
     {
         $user = $request->user();
         $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;

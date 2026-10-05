@@ -413,6 +413,179 @@ class RewardService
 
         return $paginator;
     }
+    public function getCustomerLedgerTemp(?int $customerId = null, ?int $agencyId = null, ?int $perPage = 15, $validated = null)
+    {
+        $query = RewardWalletTemp::select(
+            'reward_wallet_temp.id',
+            'reward_wallet_temp.ReferenceNo',
+            'reward_wallet_temp.type',
+            'reward_wallet_temp.points',
+            'reward_wallet_temp.balance_points',
+            'reward_wallet_temp.description',
+            'reward_wallet_temp.status',
+            'reward_wallet_temp.RewardMode',
+            'reward_wallet_temp.PlanType',
+            'reward_wallet_temp.created_at',
+
+            'payer.name as payer_name',
+            'payer.email as payer_email',
+            'payer.mobile as payer_mobile',
+
+            'payee.name as payee_name',
+            'payee.email as payee_email',
+            'payee.mobile as payee_mobile',
+
+            'cus.name',
+            'cus.mobile',
+            'cus.email',
+            'cus.UserType',
+            'cus.countrycode',
+        )
+            ->leftJoin('users as cus', 'cus.id', '=', 'reward_wallet_temp.customer_id')
+            ->leftJoin('users as payer', 'payer.id', '=', 'reward_wallet_temp.payer_id')
+            ->leftJoin('users as payee', 'payee.id', '=', 'reward_wallet_temp.payee_id')
+            ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
+            ->orderBy('reward_wallet_temp.id', 'desc')
+            ->where(
+                function ($query) use ($validated) {
+                    if (!empty($validated['bookingID'])) {
+                        return $query->where('reward_wallet_temp.ReferenceNo', $validated['bookingID']);
+                    }
+                    if (!empty($validated['FromDate']) && !empty($validated['ToDate'])) {
+                        return $query->whereBetween('reward_wallet_temp.created_at', [date('Y-m-d', strtotime($validated['FromDate'])) . " 00:00:00", date('Y-m-d', strtotime($validated['ToDate'])) . " 23:59:59"]);
+                    }
+                }
+            );
+
+        // Filter by customer
+        if ($customerId) {
+            $query->where(function ($q) use ($customerId) {
+                $q->where('reward_wallet_temp.customer_id', $customerId);
+            });
+        }
+        // Filter by AgencyID
+        if ($agencyId) {
+            $query->where('reward_wallet_temp.AgencyID', $agencyId);
+        }
+
+        $query->orderBy('reward_wallet_temp.created_at', 'desc')
+            ->orderBy('reward_wallet_temp.id', 'desc');
+
+        // Pagination
+        $paginator = $query->paginate($perPage);
+
+        // Calculate running balance if customerId is provided
+        $runningBalance = 0;
+        if ($customerId) {
+            $currentBalance = $this->getCustomerNetBalanceTemp($customerId, $agencyId);
+            $runningBalance = $currentBalance;
+        }
+
+        // Transform items
+        $transformedItems = $paginator->getCollection()->map(function ($transaction) use ($customerId, &$runningBalance) {
+
+            // User details already available
+            $transaction->payer_name  = $transaction->payer_name;
+            $transaction->payer_email = $transaction->payer_email;
+            $transaction->payer_mobile = $transaction->payer_mobile;
+
+            $transaction->payee_name = $transaction->payee_name;
+            $transaction->payee_email = $transaction->payee_email;
+            $transaction->payee_mobile = $transaction->payee_mobile;
+
+            // Perspective based transaction type and balance calculation
+            if ($customerId) {
+                // Determine if customer is sender or receiver
+                $isCustomerPayer = ($transaction->payer_id == $customerId);
+                $isCustomerPayee = ($transaction->payee_id == $customerId);
+
+                if ($isCustomerPayee && $transaction->type == RewardWalletTemp::TYPE_CREDIT) {
+                    $transaction->customer_transaction_type = 'CREDIT_RECEIVED';
+                    $transaction->amount = $transaction->points;
+                    $transaction->is_credit = true;
+                    $transaction->mode = 'Earn';
+
+                    // Calculate running balance (working backwards from current balance)
+                    $transaction->running_balance = $runningBalance;
+                    $runningBalance -= $transaction->points; // Subtract credit when going backwards
+
+                } elseif ($isCustomerPayer && $transaction->type == RewardWalletTemp::TYPE_DEBIT) {
+                    $transaction->customer_transaction_type = 'DEBIT_SENT';
+                    $transaction->amount = -$transaction->points;
+                    $transaction->is_credit = false;
+                    $transaction->mode = 'Pay';
+
+                    // Calculate running balance (working backwards from current balance)
+                    $transaction->running_balance = $runningBalance;
+                    $runningBalance += $transaction->points; // Add debit when going backwards
+
+                } else {
+                    $transaction->customer_transaction_type = 'OTHER';
+                    $transaction->amount = 0;
+                    $transaction->is_credit = null;
+                    $transaction->mode = 'Other';
+                    $transaction->running_balance = $runningBalance;
+                }
+
+                // Counterparty information - Show the other party's name
+                if ($isCustomerPayer) {
+                    $transaction->counterparty_id = $transaction->payee_id;
+                    $transaction->counterparty_name = $transaction->payee_name;
+                    $transaction->counterparty_email = $transaction->payee_email;
+                    $transaction->counterparty_mobile = $transaction->payee_mobile;
+                    $transaction->counterparty_type = 'RECEIVER';
+
+                    // For display purposes
+                    $transaction->from_name = $transaction->payer_name; // Customer is sender
+                    $transaction->to_name = $transaction->payee_name;   // Receiver is counterparty
+                } else {
+                    $transaction->counterparty_id = $transaction->payer_id;
+                    $transaction->counterparty_name = $transaction->payer_name;
+                    $transaction->counterparty_email = $transaction->payer_email;
+                    $transaction->counterparty_mobile = $transaction->payer_mobile;
+                    $transaction->counterparty_type = 'SENDER';
+
+                    // For display purposes  
+                    $transaction->from_name = $transaction->payer_name; // Sender is counterparty
+                    $transaction->to_name = $transaction->payee_name;   // Customer is receiver
+                }
+            } else {
+                // General ledger view
+                $transaction->customer_transaction_type = $transaction->type;
+                $transaction->amount = $transaction->type == RewardWalletTemp::TYPE_CREDIT
+                    ? $transaction->points
+                    : -$transaction->points;
+                $transaction->is_credit = $transaction->type == RewardWalletTemp::TYPE_CREDIT;
+                $transaction->mode = $transaction->type == RewardWalletTemp::TYPE_CREDIT ? 'Earn' : 'Pay';
+                $transaction->counterparty_id = null;
+                $transaction->counterparty_name = null;
+                $transaction->counterparty_email = null;
+                $transaction->counterparty_mobile = null;
+                $transaction->counterparty_type = 'TRANSACTION';
+                $transaction->from_name = $transaction->payer_name;
+                $transaction->to_name = $transaction->payee_name;
+
+                // For general ledger, use the original balance_points
+                $transaction->running_balance = $transaction->balance_points;
+            }
+
+            return $transaction;
+        });
+
+        $paginator->setCollection($transformedItems);
+
+        // Add balance summary to paginator if customer specific
+        if ($customerId) {
+            $paginator->balance_summary = [
+                'current_balance' => $this->getCustomerNetBalanceTemp($customerId, $agencyId),
+                'total_transactions' => $query->count(),
+                'customer_id' => $customerId,
+                'agency_id' => $agencyId
+            ];
+        }
+
+        return $paginator;
+    }
 
     // public function getCustomerLedger(?int $customerId = null, ?int $agencyId = null, ?int $perPage = 15)
     // {

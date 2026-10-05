@@ -6,6 +6,7 @@ use App\Http\Controllers\API\LoyaltyController;
 use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
+use App\Http\Controllers\Api\Voucher\VoucherCartController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
 use App\Http\Controllers\DashboardController;
@@ -68,7 +69,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('membership/{program_id}/details', [MembershipController::class, 'membershipDetails']);
         Route::post('savemembership', [MembershipController::class, 'addMembership']);
         Route::post('membership/{program_id}/togglestatus', [MembershipController::class, 'toggleMembershipStatus']);
-
     });
 
     Route::prefix("payment")->group(function () {
@@ -82,6 +82,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::any('/add', [VouchersController::class, 'addnew']);
         Route::any('/voucher-list', [VouchersController::class, 'voucherList']);
         Route::any('/getvoucher', [VouchersController::class, 'voucherListAPI']);
+
+        Route::get('voucher-cart', [VoucherCartController::class, 'index']);
+        Route::post('voucher-cart', [VoucherCartController::class, 'store']);
+        Route::put('voucher-cart/{voucherId}', [VoucherCartController::class, 'update'])->whereNumber('voucherId');
+        Route::delete('voucher-cart/{voucherId}', [VoucherCartController::class, 'destroy'])->whereNumber('voucherId');
+        Route::delete('voucher-cart', [VoucherCartController::class, 'clear']);
     });
     Route::prefix("products")->group(function () {
         Route::any('/fetch', [ProductController::class, 'fetchproducts'])->name('products.fetch');
@@ -111,7 +117,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
-    
 });
 
 Route::middleware('apiKey')->group(function () {
@@ -132,6 +137,7 @@ Route::middleware('apiKey')->group(function () {
     Route::post('/loyalty/store-reward-vouchers', [LoyaltyController::class, 'storeRewardVouchers']);
 
     Route::post('/reward/reward-ledger', [WalletController::class, 'RewardLedger']);
+    Route::post('/reward/reward-ledger-temp', [WalletController::class, 'RewardLedgerTemp']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
