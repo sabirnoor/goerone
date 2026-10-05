@@ -122,16 +122,14 @@ class LoyaltyController extends Controller
             $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                 ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
-                ->where('user_card.status', 'active')->first();
+                ->where('user_card.status', 'active')->whereDate('user_card.deactivation_date', '>=', today())->first();
             $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
             $card_id = isset($checkUserCardExist->card_id) ? $checkUserCardExist->card_id : 0;
 
             if (isset($request->membershipId) && $request->membershipId > 0) {
                 $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
-
                 $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
-                // pr($program_id);
-                // die;
+
                 if ($program_id === 0) {
                     $post['cardNumbers'] = [];
                     $post['keyword'] = '';
@@ -415,7 +413,7 @@ class LoyaltyController extends Controller
                 $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
             }
 
-            // pr($maxdiscountvalue);
+            // pr($rewardEarns);
 
             // pr($discount);
             // pr($discountOwner);
@@ -640,7 +638,7 @@ class LoyaltyController extends Controller
                                     'PlanType' => 5,
                                     'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
                                 ];
-                                $this->rewardService->addPoints($RewardInsert);
+                                $this->rewardService->addPointsTemp($RewardInsert);
                             }
 
                             return response()->json([

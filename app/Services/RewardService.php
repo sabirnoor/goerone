@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\RewardWallet;
+use App\Models\RewardWalletTemp;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -117,6 +118,32 @@ class RewardService
             'balance_points' => $currentBalance + $data['points'],
             'description' => $data['description'] ?? 'Points credited',
             'status' => RewardWallet::STATUS_SUCCESS,
+            'RewardMode' => $data['RewardMode'] ?? null,
+            'PlanType' => $data['PlanType'] ?? 0,
+            'latitude' => $data['latitude'] ?? null,
+            'longitude' => $data['longitude'] ?? null,
+            'device_id' => $data['device_id'] ?? null,
+            'ip_address' => $data['ip_address'] ?? request()->ip(),
+        ]);
+    }
+    public function addPointsTemp(array $data): RewardWalletTemp
+    {
+
+        $currentBalance = $this->getCustomerNetBalance($data['payee_id'], $data['AgencyID']);
+        // pr($currentBalance);
+        // die;
+        return RewardWalletTemp::create([
+            'ReferenceNo' => $data['ReferenceNo'] ?? RewardWalletTemp::generateTxnRef('EAR'),
+            'AgencyID' => $data['AgencyID'],
+            'UserSysId' => $data['UserSysId'],
+            'payer_id' => $data['payer_id'] ?? null,
+            'payee_id' => $data['payee_id'],
+            'customer_id' => $data['payee_id'],
+            'type' => RewardWalletTemp::TYPE_CREDIT,
+            'points' => $data['points'],
+            'balance_points' => $currentBalance + $data['points'],
+            'description' => $data['description'] ?? 'Points credited',
+            'status' => RewardWalletTemp::STATUS_SUCCESS,
             'RewardMode' => $data['RewardMode'] ?? null,
             'PlanType' => $data['PlanType'] ?? 0,
             'latitude' => $data['latitude'] ?? null,
