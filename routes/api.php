@@ -6,13 +6,14 @@ use App\Http\Controllers\API\LoyaltyController;
 use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
-use App\Http\Controllers\Api\Voucher\VoucherCartController;
+use App\Http\Controllers\VoucherCartController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
+use App\Http\Controllers\VoucherCheckoutController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WalletController;
 use App\Models\Service;
@@ -88,6 +89,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('voucher-cart/{voucherId}', [VoucherCartController::class, 'update'])->whereNumber('voucherId');
         Route::delete('voucher-cart/{voucherId}', [VoucherCartController::class, 'destroy'])->whereNumber('voucherId');
         Route::delete('voucher-cart', [VoucherCartController::class, 'clear']);
+
+        Route::post('voucher-checkout', [VoucherCheckoutController::class, 'checkout']);
+        Route::get('voucher-orders', [MyVoucherController::class, 'orders']);
+        Route::get('voucher-orders/{orderNo}', [MyVoucherController::class, 'order']);
+        Route::get('my-vouchers', [MyVoucherController::class, 'vouchers']);
     });
     Route::prefix("products")->group(function () {
         Route::any('/fetch', [ProductController::class, 'fetchproducts'])->name('products.fetch');

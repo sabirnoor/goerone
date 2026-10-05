@@ -830,6 +830,8 @@ class LoyaltyController extends Controller
             $referneceNo = $request->referneceNo ?? null;
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
+            $BalanceTemp = $this->rewardService->getCustomerNetBalanceTemp($request->user()->id, $AgencyID, $referneceNo);
+            $Balance = $this->rewardService->getCustomerNetBalance($request->user()->id, $AgencyID, $referneceNo);
 
             if ($ReddemPass || $checkUserCardExist) {
                 return response()->json([
@@ -838,6 +840,8 @@ class LoyaltyController extends Controller
                         'httpStatus' => 200,
                     ],
                     'message' => 'Success',
+                    'cashback_status' => ($BalanceTemp > 0) ? false : true,
+                    'cashback' => ($BalanceTemp > 0) ? $BalanceTemp : $Balance,
                     'data' => $ReddemPass,
                     'UserCard' => $checkUserCardExist,
                 ]);

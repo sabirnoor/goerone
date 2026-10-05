@@ -25,6 +25,7 @@ class VoucherPurchaseService
     public function checkout(User $user): array
     {
         [$order, $payment] = DB::transaction(function () use ($user) {
+            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
             $cartItems = VoucherCartItem::where('customer_id', $user->id)->get();
 
             if ($cartItems->isEmpty()) {
@@ -39,7 +40,7 @@ class VoucherPurchaseService
                 ->each(fn($o) => $this->release($o, 'cancelled'));
 
             // Lock voucher rows so two buyers can't take the last unit
-            $vouchers = Vouchers::whereIn('id', $cartItems->pluck('voucher_id'))
+            $vouchers = Vouchers::where('AgencyID', $AgencyID)->whereIn('id', $cartItems->pluck('voucher_id'))
                 ->lockForUpdate()->get()->keyBy('id');
 
             $subtotal = 0;

@@ -403,7 +403,7 @@ class WalletController extends Controller
             $validated['ToDate'] = (isset($request->ToDate)) ? $request->ToDate : null;
             $validated['bookingID'] = (isset($request->bookingID)) ? $request->bookingID : null;
             return DB::transaction(function () use ($validated, $perPage) {
-                $result = $this->rewardService->getCustomerLedger($validated['customer_id'] ?? null, $validated['AgencyID'], $perPage, $validated);
+                $result = $this->rewardService->getCustomerLedgerTemp($validated['customer_id'] ?? null, $validated['AgencyID'], $perPage, $validated);
                 return response()->json([
                     'status' => [
                         'success' => true,

@@ -198,12 +198,15 @@ class RewardService
         return $latestEntry ? $latestEntry->balance_points : 0;
     }
 
-    public function getCustomerNetBalance(int $customerId, ?int $agencyId = null): float
+    public function getCustomerNetBalance(int $customerId, ?int $agencyId = null, ?string $referneceNo = null): float
     {
         $query = RewardWallet::where('status', RewardWallet::STATUS_SUCCESS);
 
         if ($agencyId) {
             $query->where('AgencyID', $agencyId);
+        }
+        if ($referneceNo) {
+            $query->where('ReferenceNo', $referneceNo);
         }
 
         // Total credits received as payee
@@ -218,12 +221,15 @@ class RewardService
 
         return $totalCredits - $totalDebits;
     }
-    public function getCustomerNetBalanceTemp(int $customerId, ?int $agencyId = null): float
+    public function getCustomerNetBalanceTemp(int $customerId, ?int $agencyId = null, ?string $referneceNo = null): float
     {
         $query = RewardWalletTemp::where('status', RewardWalletTemp::STATUS_SUCCESS);
 
         if ($agencyId) {
             $query->where('AgencyID', $agencyId);
+        }
+        if ($referneceNo) {
+            $query->where('ReferenceNo', $referneceNo);
         }
 
         // Total credits received as payee
