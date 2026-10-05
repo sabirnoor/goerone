@@ -69,7 +69,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('savemembership', [MembershipController::class, 'addMembership']);
         Route::post('membership/{program_id}/togglestatus', [MembershipController::class, 'toggleMembershipStatus']);
 
-        Route::post('store-reward-vouchers', [LoyaltyController::class, 'storeRewardVouchers']);
     });
 
     Route::prefix("payment")->group(function () {
@@ -128,6 +127,8 @@ Route::middleware('apiKey')->group(function () {
     Route::post('payment/verify', [IndexController::class, 'verifyPayment']);
     Route::post('/initiate_payment', [IndexController::class, 'initiate_payment']);
     Route::any('/payment/response', [IndexController::class, 'atomresponse']);
+
+    Route::post('/loyalty/store-reward-vouchers', [LoyaltyController::class, 'storeRewardVouchers']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
