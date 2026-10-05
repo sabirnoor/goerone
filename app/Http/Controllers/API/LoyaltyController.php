@@ -78,7 +78,7 @@ class LoyaltyController extends Controller
                 'order_amount' => 'required|integer|min:1',
                 'membershipId' => 'nullable|integer||exists:loyalty_program,program_id',
                 'reward_id' => [
-                    'required',
+                    'nullable',
                     'integer',
                     Rule::exists(LoyaltyReward::class, 'reward_id')
                         ->where(fn($q) => $q->where('AgencyID', $AgencyID))
@@ -119,10 +119,15 @@ class LoyaltyController extends Controller
 
         DB::beginTransaction();
         try {
+            $membershipId = $request->membershipId ?? 0;
+            $mep = $request->mep ?? 0;
             $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                 ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
-                ->where('user_card.status', 'active')->whereDate('user_card.deactivation_date', '>=', today())->first();
+                ->where('user_card.status', 'active')->whereDate('user_card.deactivation_date', '>=', today())
+                ->when($mep == 1, function ($query) use ($membershipId) {
+                    $query->where('loyalty_card.program_id', $membershipId);
+                })->first();
             $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
             $card_id = isset($checkUserCardExist->card_id) ? $checkUserCardExist->card_id : 0;
 
@@ -325,6 +330,10 @@ class LoyaltyController extends Controller
                     }
                     DB::commit();
                     if (isset($request->mep) && $request->mep == 1) {
+                        $checkUserCardExist = LoyaltyUserCard::with('usercard')->select('user_card.*', 'loyalty_card.program_id')
+                            ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                            ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                            ->where('user_card.status', 'active')->first();
                         return response()->json([
                             'status' => [
                                 'success' => true,
@@ -334,6 +343,7 @@ class LoyaltyController extends Controller
                             'mep' => $request->mep ?? 0,
                             'rdm' => $request->rdm ?? 0,
                             'ref' => $request->ref ?? null,
+                            'UserCard' => $checkUserCardExist,
                         ]);
                     }
                 } else {
@@ -380,16 +390,20 @@ class LoyaltyController extends Controller
             $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
             $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
             $max_reward_value = isset($Reward->max_reward_value) ? $Reward->max_reward_value : 0;
-            $maxdiscountvalue = isset($Reward->maxdiscount_slabs) ? $Reward->maxdiscount_slabs : 0;
+            $maxdiscountvalue = isset($Reward->maxdiscount_slabs) ? $Reward->maxdiscount_slabs : [];
             $maxdiscountvalue = $this->getMaxDiscount($maxdiscountvalue, $request->order_amount);
-            if ($dealtype === 0 && !($request->order_amount < $ordervalue)) {
+            if ($dealtype === 0 && !($request->order_amount < $ordervalue) && !empty($Reward)) {
                 $discount = (($request->order_amount * (float)$dealvalue) / 100);
-                $discountOwner = (($request->order_amount * (float)$ownervalue) / 100);
-                $discountCust = (($request->order_amount * (float)$custvalue) / 100);
-            } else if (!($request->order_amount < $ordervalue)) {
+                $discountOwner = (($discount * (float)$ownervalue) / 100);
+                $discountCust = (($discount * (float)$custvalue) / 100);
+            } else if (!($request->order_amount < $ordervalue) && !empty($Reward)) {
                 $discount = $dealvalue;
                 $discountOwner = $ownervalue;
                 $discountCust = $custvalue;
+            } else if (empty($Reward)) {
+                $discount = $request->order_amount;
+                $discountOwner = 0;
+                $discountCust = 0;
             } else {
                 $discount = 0;
                 $discountOwner = 0;
@@ -407,14 +421,14 @@ class LoyaltyController extends Controller
                 $rewardEarns = $max_reward_value;
             }
 
-            if ($discount >= $maxdiscountvalue) {
+            if ($discount >= $maxdiscountvalue && !empty($Reward)) {
                 $discount = $maxdiscountvalue;
                 $discountOwner = (($maxdiscountvalue * (float)$ownervalue) / 100);
                 $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
             }
 
-            // pr($rewardEarns);
 
+            // pr($maxdiscountvalue);
             // pr($discount);
             // pr($discountOwner);
             // pr($discountCust);
@@ -513,7 +527,7 @@ class LoyaltyController extends Controller
                     ->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
                 $stores_id = !empty($accessToken->tokenable_id) ? $accessToken->tokenable_id : 0;
 
-                if ($checkReward && $accessToken && $stores_id > 0) {
+                if ($accessToken && $stores_id > 0) {
                     // Verify the card belongs to the user
                     $cardExists = DB::table('user_card')
                         ->where(function ($query) use ($user) {
@@ -532,16 +546,51 @@ class LoyaltyController extends Controller
                             'message' => 'The specified card does not belong to this user'
                         ]);
                     }
+                    $usereward = $request->ur ?? 0;
+                    $BookingAmount = ($request->order_amount - $discountCust);
+                    if ($usereward == 1) {
+                        $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
+                        $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
+                        if ($points_to_redeem > $BookingAmount) {
+                            $points_to_redeem = $BookingAmount;
+                        }
+                        $RewardRequest = [
+                            "points" => ($points_to_redeem),
+                            "description" => 'Used on Loyalty Redeem',
+                            'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                            'UserSysId' =>  $request->user()->id,
+                            "payer_id" => $user->id,
+                            "payee_id" => $AgencyID,
+                            "RewardMode" => "Pay",
+                            "ReferenceNo" => $request->ref,
+                            'PlanType' => 10,
+                        ];
 
+                        $redemption = $this->rewardService->transferPoints($RewardRequest);
+                        $success = $redemption['success'] ?? 0;
+                        $message = isset($redemption['message']) ? $redemption['message'] : 0;
+                        if ($success == 1) {
+                            $BookingAmount = ($BookingAmount - ($points_to_redeem));
+                        }
+                        if ($success == 0) {
+                            DB::rollback();
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 1016,
+                                ],
+                                'message' => $message,
+                            ]);
+                        }
+                    }
                     $wallet = [
                         "customer_id" => $user->id,
-                        "amount" => ($request->order_amount - $discountCust),
+                        "amount" => $BookingAmount,
                         "RefrenceNo" => isset($request->ref) ? $request->ref : date('YmdHis'),
                         "PlanType" => 10,
                         "Remark" => "Redeem at " . ($storeData->store_name ?? 'Store'),
                         'PaymentMode' => 'Redeem'
                     ];
-
                     $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
                     $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
                     $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
@@ -554,6 +603,18 @@ class LoyaltyController extends Controller
                             ],
                             'message' => $message,
                         ]);
+                    }
+                    if (empty($checkReward)) {
+                        return response()->json([
+                            'status' => [
+                                'success' => true,
+                                'httpStatus' => 200,
+                            ],
+                            'message' => 'Redemption processed successfully',
+                            'mep' => $request->mep ?? 0,
+                            'rdm' => $request->rdm ?? 0,
+                            'ref' => $request->ref ?? null,
+                        ], 200);
                     }
                     // pr($request->all());
                     // pr($rewardEarns);
@@ -622,7 +683,7 @@ class LoyaltyController extends Controller
                                     "payer_id" => $request->user_id,
                                     "payee_id" => $AgencyID,
                                     "RewardMode" => "Pay",
-                                    'PlanType' => 5,
+                                    'PlanType' => 10,
                                 ];
                                 $redemption = $this->rewardService->transferPoints($RewardRedeem);
                             }
@@ -635,7 +696,8 @@ class LoyaltyController extends Controller
                                     "payee_id" => $request->user_id,
                                     "points" => $rewardEarns,
                                     "RewardMode" => "Earn",
-                                    'PlanType' => 5,
+                                    'PlanType' => 10,
+                                    'ReferenceNo' => $request->ref ?? '',
                                     'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
                                 ];
                                 $this->rewardService->addPointsTemp($RewardInsert);
@@ -717,8 +779,8 @@ class LoyaltyController extends Controller
             'referneceNo' => [
                 'required',
                 'string',
-                Rule::exists(LoyaltyRedemption::class, 'referneceNo')
-                    ->where(fn($q) => $q->where('AgencyID', $AgencyID)->where('user_id', $request->user()->id))
+                // Rule::exists(LoyaltyRedemption::class, 'referneceNo')
+                //     ->where(fn($q) => $q->where('AgencyID', $AgencyID)->where('user_id', $request->user()->id))
             ]
 
         ]);
@@ -753,7 +815,7 @@ class LoyaltyController extends Controller
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
 
-            if ($ReddemPass) {
+            if ($ReddemPass || $checkUserCardExist) {
                 return response()->json([
                     'status' => [
                         'success' => true,

@@ -10,7 +10,7 @@ class RewardWalletTemp extends Model
 {
     use HasFactory;
 
-    protected $table = 'reward_wallet';
+    protected $table = 'reward_wallet_temp';
 
     /**
      * The attributes that are mass assignable.

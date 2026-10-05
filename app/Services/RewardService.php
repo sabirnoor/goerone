@@ -129,7 +129,7 @@ class RewardService
     public function addPointsTemp(array $data): RewardWalletTemp
     {
 
-        $currentBalance = $this->getCustomerNetBalance($data['payee_id'], $data['AgencyID']);
+        $currentBalance = $this->getCustomerNetBalanceTemp($data['payee_id'], $data['AgencyID']);
         // pr($currentBalance);
         // die;
         return RewardWalletTemp::create([
@@ -214,6 +214,26 @@ class RewardService
         // Total debits made as payer
         $totalDebits = (clone $query)->where('payer_id', $customerId)
             ->where('type', RewardWallet::TYPE_DEBIT)
+            ->sum('points');
+
+        return $totalCredits - $totalDebits;
+    }
+    public function getCustomerNetBalanceTemp(int $customerId, ?int $agencyId = null): float
+    {
+        $query = RewardWalletTemp::where('status', RewardWalletTemp::STATUS_SUCCESS);
+
+        if ($agencyId) {
+            $query->where('AgencyID', $agencyId);
+        }
+
+        // Total credits received as payee
+        $totalCredits = (clone $query)->where('payee_id', $customerId)
+            ->where('type', RewardWalletTemp::TYPE_CREDIT)
+            ->sum('points');
+
+        // Total debits made as payer
+        $totalDebits = (clone $query)->where('payer_id', $customerId)
+            ->where('type', RewardWalletTemp::TYPE_DEBIT)
             ->sum('points');
 
         return $totalCredits - $totalDebits;
