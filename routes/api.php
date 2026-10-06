@@ -131,7 +131,7 @@ Route::middleware('apiKey')->group(function () {
         Route::post('register', [GoerOneAuthController::class, 'register']);
         Route::post('otp-verify', [GoerOneAuthController::class, 'otpverify']);
     });
-
+    Route::post('/loyalty/program', [LoyaltyController::class, 'getLoyaltyProgram']);
     Route::post('/loyalty/city-service', [LoyaltyController::class, 'cityService']);
 
     Route::post('/store/fetch-store-categories', [StoreController::class, 'fetchStoreCategories']);
