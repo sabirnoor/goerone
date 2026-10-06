@@ -91,9 +91,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('voucher-cart', [VoucherCartController::class, 'clear']);
 
         Route::post('voucher-checkout', [VoucherCheckoutController::class, 'checkout']);
-        Route::get('voucher-orders', [MyVoucherController::class, 'orders']);
-        Route::get('voucher-orders/{orderNo}', [MyVoucherController::class, 'order']);
-        Route::get('my-vouchers', [MyVoucherController::class, 'vouchers']);
+        // Route::get('voucher-orders', [MyVoucherController::class, 'orders']);
+        // Route::get('voucher-orders/{orderNo}', [MyVoucherController::class, 'order']);
+        // Route::get('my-vouchers', [MyVoucherController::class, 'vouchers']);
     });
     Route::prefix("products")->group(function () {
         Route::any('/fetch', [ProductController::class, 'fetchproducts'])->name('products.fetch');

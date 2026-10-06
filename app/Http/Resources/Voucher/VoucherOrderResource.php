@@ -14,6 +14,7 @@ class VoucherOrderResource extends JsonResource
             'subtotal'     => (float) $this->subtotal,
             'tax_amount'   => (float) $this->tax_amount,
             'total_amount' => (float) $this->total_amount,
+            'discount' => (float) $this->customer_share,
             'currency'     => $this->currency,
             'expires_at'   => $this->expires_at,
             'paid_at'      => $this->paid_at,

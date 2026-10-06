@@ -20,3 +20,7 @@ ALTER TABLE vouchers
 ) ENGINE=InnoDB;
 
 ALTER TABLE vouchers MODIFY COLUMN customer_type INT NULL;
+
+
+
+ALTER TABLE `voucher_orders` ADD `discount` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `total_amount`, ADD `owner_share` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `discount`, ADD `customer_share` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `owner_share`;

@@ -4,12 +4,13 @@ namespace App\Services\Voucher;
 
 use App\Exceptions\VoucherException;
 use App\Models\CustomerVoucher;
+use App\Models\RewardEarn;
 use App\Models\User;
 use App\Models\VoucherCartItem;
 use App\Models\VoucherOrder;
 use App\Models\VoucherPayment;
 use App\Models\Vouchers;
-use App\Services\Voucher\Gateways\VoucherPaymentGateway;
+// use App\Services\Voucher\Gateways\VoucherPaymentGateway;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -17,7 +18,7 @@ use Throwable;
 
 class VoucherPurchaseService
 {
-    public function __construct(private VoucherPaymentGateway $gateway) {}
+    // public function __construct(private VoucherPaymentGateway $gateway) {}
 
     /* ------------------------------------------------------------------
      |  CHECKOUT: cart -> pending order (stock reserved) -> start payment
@@ -25,6 +26,10 @@ class VoucherPurchaseService
     public function checkout(User $user): array
     {
         [$order, $payment] = DB::transaction(function () use ($user) {
+
+            $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $user->id]);
+            $availablereward = isset($TotalRewardEarning->total_rewardearn) ? (float)$TotalRewardEarning->total_rewardearn : 0;
+
             $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
             $cartItems = VoucherCartItem::where('customer_id', $user->id)->get();
 
@@ -40,14 +45,50 @@ class VoucherPurchaseService
                 ->each(fn($o) => $this->release($o, 'cancelled'));
 
             // Lock voucher rows so two buyers can't take the last unit
-            $vouchers = Vouchers::where('AgencyID', $AgencyID)->whereIn('id', $cartItems->pluck('voucher_id'))
+            $vouchers = Vouchers::where('AgencyID', $AgencyID)->where('is_active', 1)->whereIn('id', $cartItems->pluck('voucher_id'))
                 ->lockForUpdate()->get()->keyBy('id');
-
+            if ($vouchers->isEmpty()) {
+                throw new VoucherException('Your voucher is inactive.');
+            }
+            $discountTotal = 0;
+            $discountOwnerTotal = 0;
+            $discountCustTotal = 0;
             $subtotal = 0;
             $lines    = [];
 
             foreach ($cartItems as $ci) {
                 $v = $vouchers->get($ci->voucher_id);
+                $discount_type = isset($v->discount_type) ? (float)$v->discount_type : 0;
+                $discount_value = isset($v->discount_value) ? (float)$v->discount_value : 0;
+                $customer_share = isset($v->customer_share) ? (float)$v->customer_share : 0;
+                $owner_share = isset($v->owner_share) ? (float)$v->owner_share : 0;
+                $voucher_price = isset($v->voucher_price) ? (float)$v->voucher_price : 0;
+                $max_discount_value = isset($v->max_discount_value) ? (float)$v->max_discount_value : 0;
+                $rewardrequired = isset($v->required_value) ? (float)$v->required_value : 0;
+                $gtcoin_required = isset($v->gtcoin_required) ? $v->gtcoin_required : 0;
+                if ($discount_type == 2) {
+                    $discount = (($voucher_price * (float)$discount_value) / 100);
+                    $discountOwner = (($discount * (float)$owner_share) / 100);
+                    $discountCust = (($discount * (float)$customer_share) / 100);
+                } else if ($discount_type == 1) {
+                    $discount = $voucher_price;
+                    $discountOwner = $owner_share;
+                    $discountCust = $customer_share;
+                } else {
+                    $discount = 0;
+                    $discountOwner = 0;
+                    $discountCust = 0;
+                }
+
+                if ($discount >= $max_discount_value) {
+                    $discount = $max_discount_value;
+                    $discountOwner = (($max_discount_value * (float)$owner_share) / 100);
+                    $discountCust = (($max_discount_value * (float)$customer_share) / 100);
+                }
+
+                // if ($availablereward < $rewardrequired && $gtcoin_required == 1) {
+                //     throw new VoucherException("Insufficient reward balance : to buy this required at least " . $rewardrequired . " reward points");
+                // }
 
                 if (! $v || ! $v->isPurchasable()) {
                     throw new VoucherException("'" . ($v->voucher_name ?? 'A voucher') . "' is no longer available.");
@@ -58,12 +99,15 @@ class VoucherPurchaseService
                     throw new VoucherException("Only {$left} left for '{$v->voucher_name}'.");
                 }
 
+                $discountTotal      += round($discount * $ci->quantity, 2);
+                $discountOwnerTotal      += round($discountOwner * $ci->quantity, 2);
+                $discountCustTotal      += round($discountCust * $ci->quantity, 2);
                 $line      = round($v->voucher_price * $ci->quantity, 2);
                 $subtotal += $line;
                 $lines[]   = ['voucher' => $v, 'qty' => $ci->quantity, 'line' => $line];
             }
 
-            $subtotal = round($subtotal, 2);
+            $subtotal = round(($subtotal - $discountCustTotal), 2);
             $tax      = round($subtotal * config('voucher.gst_percent') / 100, 2);
 
             $order = VoucherOrder::create([
@@ -72,12 +116,19 @@ class VoucherPurchaseService
                 'subtotal'       => $subtotal,
                 'tax_amount'     => $tax,
                 'total_amount'   => round($subtotal + $tax, 2),
+                'discount'   => round($discountTotal, 2),
+                'owner_share'   => round($discountOwnerTotal, 2),
+                'customer_share'   => round($discountCustTotal, 2),
                 'currency'       => config('voucher.currency'),
                 'status'         => 'pending',
                 'stock_reserved' => true,
                 'expires_at'     => now()->addMinutes(config('voucher.order_expiry_minutes')),
             ]);
-
+            // pr($subtotal);
+            // pr($discountTotal);
+            // pr($discountOwnerTotal);
+            // pr($discountCustTotal);
+            // die;
             foreach ($lines as $l) {
                 /** @var Vouchers $v */
                 $v = $l['voucher'];
@@ -125,25 +176,24 @@ class VoucherPurchaseService
                 'raw'             => ['free_order' => true],
             ]);
 
-            return ['order' => $order->load('items', 'customerVouchers.orderItem'), 'payment_required' => false, 'payment' => null];
+            return ['order' => $order->load('items', 'customerVouchers.orderItem'), 'discount'   => 0, 'payment_required' => false, 'payment' => null];
         }
+        $paymentData = null;
+        // try {
+        //     $paymentData = $this->gateway->initiate($order, $payment, $user);
+        // } catch (Throwable $e) {
+        //     Log::error('Voucher payment initiate failed', ['order' => $order->order_no, 'error' => $e->getMessage()]);
 
-        try {
-            $paymentData = $this->gateway->initiate($order, $payment, $user);
-        } catch (Throwable $e) {
-            Log::error('Voucher payment initiate failed', ['order' => $order->order_no, 'error' => $e->getMessage()]);
+        //     DB::transaction(function () use ($order) {
+        //         $locked = VoucherOrder::lockForUpdate()->find($order->id);
+        //         if ($locked && $locked->status === 'pending') {
+        //             $this->release($locked, 'failed');
+        //         }
+        //     });
 
-            DB::transaction(function () use ($order) {
-                $locked = VoucherOrder::lockForUpdate()->find($order->id);
-                if ($locked && $locked->status === 'pending') {
-                    $this->release($locked, 'failed');
-                }
-            });
-
-            throw new VoucherException('Unable to start payment. Please try again.');
-        }
-
-        return ['order' => $order->load('items'), 'payment_required' => true, 'payment' => $paymentData];
+        //     throw new VoucherException('Unable to start payment. Please try again.');
+        // }
+        return ['order' => $order->load('items'), 'discount' => 0, 'payment_required' => true, 'payment' => $paymentData];
     }
 
     /* ------------------------------------------------------------------
