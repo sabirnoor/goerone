@@ -116,6 +116,7 @@ function PlanType()
         9 => "Visa",
         10 => "Loyalty Payment",
         11 => "Referral Earning",
+        12 => "Voucher Purchase",
     ];
 }
 

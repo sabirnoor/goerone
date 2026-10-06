@@ -10,7 +10,7 @@ use App\Models\VoucherCartItem;
 use App\Models\VoucherOrder;
 use App\Models\VoucherPayment;
 use App\Models\Vouchers;
-// use App\Services\Voucher\Gateways\VoucherPaymentGateway;
+use App\Services\Voucher\Gateways\VoucherPaymentGateway;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -18,7 +18,7 @@ use Throwable;
 
 class VoucherPurchaseService
 {
-    // public function __construct(private VoucherPaymentGateway $gateway) {}
+    public function __construct(private VoucherPaymentGateway $gateway) {}
 
     /* ------------------------------------------------------------------
      |  CHECKOUT: cart -> pending order (stock reserved) -> start payment
@@ -86,9 +86,9 @@ class VoucherPurchaseService
                     $discountCust = (($max_discount_value * (float)$customer_share) / 100);
                 }
 
-                // if ($availablereward < $rewardrequired && $gtcoin_required == 1) {
-                //     throw new VoucherException("Insufficient reward balance : to buy this required at least " . $rewardrequired . " reward points");
-                // }
+                if ($availablereward < $rewardrequired && $gtcoin_required == 1) {
+                    throw new VoucherException("Insufficient reward balance : to buy this required at least " . $rewardrequired . " reward points");
+                }
 
                 if (! $v || ! $v->isPurchasable()) {
                     throw new VoucherException("'" . ($v->voucher_name ?? 'A voucher') . "' is no longer available.");
@@ -179,20 +179,20 @@ class VoucherPurchaseService
             return ['order' => $order->load('items', 'customerVouchers.orderItem'), 'discount'   => 0, 'payment_required' => false, 'payment' => null];
         }
         $paymentData = null;
-        // try {
-        //     $paymentData = $this->gateway->initiate($order, $payment, $user);
-        // } catch (Throwable $e) {
-        //     Log::error('Voucher payment initiate failed', ['order' => $order->order_no, 'error' => $e->getMessage()]);
+        try {
+            $paymentData = $this->gateway->initiate($order, $payment, $user);
+        } catch (Throwable $e) {
+            Log::error('Voucher payment initiate failed', ['order' => $order->order_no, 'error' => $e->getMessage()]);
 
-        //     DB::transaction(function () use ($order) {
-        //         $locked = VoucherOrder::lockForUpdate()->find($order->id);
-        //         if ($locked && $locked->status === 'pending') {
-        //             $this->release($locked, 'failed');
-        //         }
-        //     });
+            DB::transaction(function () use ($order) {
+                $locked = VoucherOrder::lockForUpdate()->find($order->id);
+                if ($locked && $locked->status === 'pending') {
+                    $this->release($locked, 'failed');
+                }
+            });
 
-        //     throw new VoucherException('Unable to start payment. Please try again.');
-        // }
+            throw new VoucherException('Unable to start payment. Please try again.');
+        }
         return ['order' => $order->load('items'), 'discount' => 0, 'payment_required' => true, 'payment' => $paymentData];
     }
 

@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use App\Services\Voucher\Gateways\VoucherPaymentGateway;
+use App\Services\Voucher\Gateways\AtomVoucherGateway;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -11,7 +13,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(VoucherPaymentGateway::class, function () {
+            return match (config('voucher.gateway')) {
+                'atom'  => new AtomVoucherGateway(),
+                default => throw new \InvalidArgumentException('Unknown voucher payment gateway.'),
+            };
+        });
     }
 
     /**
