@@ -27,10 +27,13 @@ class CustomerVoucher extends Model
     {
         return $this->belongsTo(VoucherOrder::class, 'voucher_order_id');
     }
-
+    public function voucher()
+    {
+        return $this->belongsTo(Vouchers::class, 'voucher_id');
+    }
     public function orderItem()
     {
-        return $this->belongsTo(VoucherOrderItem::class, 'voucher_order_item_id');
+        return $this->belongsTo(VoucherOrderItem::class, 'voucher_order_item_id')->with('voucher');
     }
 
     /** 'active' becomes 'expired' automatically once valid_to has passed */

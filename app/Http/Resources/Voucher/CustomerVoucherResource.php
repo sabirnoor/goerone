@@ -24,6 +24,7 @@ class CustomerVoucherResource extends JsonResource
             'max_discount_value' => $snap['max_discount_value'] ?? null,
             'terms_condition'    => $snap['terms_condition'] ?? null,
             'used_at'            => $this->used_at,
+            'voucher'            => $this->voucher,
         ];
     }
 }

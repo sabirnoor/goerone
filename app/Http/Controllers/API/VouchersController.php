@@ -8,6 +8,10 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Helpers\Helper;
+use App\Http\Resources\Voucher\CustomerVoucherResource;
+use App\Http\Resources\Voucher\VoucherOrderResource;
+use App\Models\CustomerVoucher;
+use App\Models\VoucherOrder;
 use App\Models\Vouchers;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -36,7 +40,7 @@ class VouchersController extends Controller
         $post = $request->all();
 
         if ($post && $request->isMethod('post')) {
-              // memberships arrive as a JSON string (FormData), same pattern as stores_id
+            // memberships arrive as a JSON string (FormData), same pattern as stores_id
             $rawMemberships = $request->memberships;
             $membershipIds = is_array($rawMemberships) ? $rawMemberships : (json_decode($rawMemberships ?? '[]', true) ?: []);
             $membershipIds = array_values(array_unique(array_filter(array_map('intval', $membershipIds))));
@@ -258,7 +262,7 @@ class VouchersController extends Controller
         }
     }
 
-      /** Replace the voucher's membership rows */
+    /** Replace the voucher's membership rows */
     private function syncMemberships($voucherId, array $membershipIds): void
     {
         DB::table('voucher_memberships')->where('voucher_id', $voucherId)->delete();
@@ -266,5 +270,45 @@ class VouchersController extends Controller
             fn($programId) => ['voucher_id' => $voucherId, 'program_id' => $programId],
             $membershipIds
         ));
+    }
+
+
+    public function orders(Request $request)
+    {
+        $orders = VoucherOrder::with('items')
+            ->where('customer_id', $request->user()->id)
+            ->latest()
+            ->paginate($request->integer('per_page', 10));
+
+        return VoucherOrderResource::collection($orders)->additional(['status' => true]);
+    }
+
+    /** Also used by the frontend to poll payment status after returning from the gateway */
+    public function order(Request $request, string $orderNo)
+    {
+        $order = VoucherOrder::with(['items', 'customerVouchers.orderItem'])
+            ->where('customer_id', $request->user()->id)
+            ->where('order_no', $orderNo)
+            ->firstOrFail();
+
+        return (new VoucherOrderResource($order))->additional(['status' => true]);
+    }
+
+    /** status = active | used | expired | cancelled (optional) */
+    public function vouchers(Request $request)
+    {
+        $status = $request->query('status');
+
+        $vouchers = CustomerVoucher::with('orderItem')
+            ->where('customer_id', $request->user()->id)
+            ->when($status === 'active', fn($q) => $q->where('status', 'active')
+                ->where(fn($w) => $w->whereNull('valid_to')->orWhereDate('valid_to', '>=', today())))
+            ->when($status === 'expired', fn($q) => $q->where(fn($w) => $w->where('status', 'expired')
+                ->orWhere(fn($x) => $x->where('status', 'active')->whereDate('valid_to', '<', today()))))
+            ->when(in_array($status, ['used', 'cancelled'], true), fn($q) => $q->where('status', $status))
+            ->latest()
+            ->paginate($request->integer('per_page', 15));
+
+        return CustomerVoucherResource::collection($vouchers)->additional(['status' => true]);
     }
 }

@@ -31,23 +31,20 @@ class VoucherCheckoutController extends Controller
         $request->merge(['atomTxnId' => $request->atomTxnId]);
         $request->merge(['statusCode' => $request->statusCode]);
         $request->merge(['amount' => $request->amount]);
+        $order = null;
         try {
             $order = $this->purchase->handleGatewayResult($this->gateway->parseCallback($request));
-            pr($order);
+            return response()->json([
+                'status'           => true,
+                'order'            => $order,
+            ]);
         } catch (Throwable $e) {
-            pr($e->getMessage());
             Log::error('Voucher payment callback failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'status'           => false,
+                'order'            => null,
+                'message'            => $e->getMessage(),
+            ]);
         }
-        pr($request->all());
-        pr($request->user());
-        die;
-        $result = $this->purchase->checkout($request->user());
-
-        return response()->json([
-            'status'           => true,
-            'payment_required' => $result['payment_required'],
-            'order'            => new VoucherOrderResource($result['order']),
-            'payment'          => $result['payment'], // gateway data for the frontend to open the payment page
-        ]);
     }
 }
