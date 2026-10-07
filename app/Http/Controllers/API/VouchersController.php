@@ -299,7 +299,7 @@ class VouchersController extends Controller
     {
         $status = $request->query('status');
 
-        $vouchers = CustomerVoucher::with('orderItem')
+        $vouchers = CustomerVoucher::with(['orderItem', 'order:id,order_no'])
             ->where('customer_id', $request->user()->id)
             ->when($status === 'active', fn($q) => $q->where('status', 'active')
                 ->where(fn($w) => $w->whereNull('valid_to')->orWhereDate('valid_to', '>=', today())))

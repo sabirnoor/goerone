@@ -14,6 +14,7 @@ class CustomerVoucherResource extends JsonResource
         return [
             'id'                 => $this->id,
             'voucher_code'       => $this->voucher_code,
+            'order_no'           => $this->order?->order_no,
             'voucher_id'         => $this->voucher_id,
             'voucher_name'       => $item?->voucher_name,
             'status'             => $this->effective_status,
