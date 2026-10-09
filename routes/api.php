@@ -71,6 +71,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('membership/{program_id}/details', [MembershipController::class, 'membershipDetails']);
         Route::post('savemembership', [MembershipController::class, 'addMembership']);
         Route::post('membership/{program_id}/togglestatus', [MembershipController::class, 'toggleMembershipStatus']);
+        // customer
+        Route::post('/membership-invite/request', [MembershipController::class, 'requestConsideration']);
+        Route::get('/membership-invite/status/{program_id}', [MembershipController::class, 'myInviteStatus']);
+
+        // admin
+        Route::post('/membership-invites', [MembershipController::class, 'inviteList']);
+        Route::post('/membership-invites/{id}/review', [MembershipController::class, 'reviewInvite']);
     });
 
     Route::prefix("payment")->group(function () {
@@ -126,6 +133,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
     Route::post('/pan-verify', [PanController::class, 'panverify']);
+
 });
 
 Route::middleware('apiKey')->group(function () {

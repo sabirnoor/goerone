@@ -83,3 +83,7 @@ CREATE TABLE `membership_invites` (
 ALTER TABLE `membership_invites`
 MODIFY COLUMN `status` TINYINT NOT NULL DEFAULT 0
 COMMENT '0 = Pending, 1 = Approved, 2 = Rejected';
+
+ALTER TABLE `membership_invites`
+    ADD COLUMN `consent_given` TINYINT(1) NOT NULL DEFAULT 0 AFTER `pan_verified`,
+    ADD COLUMN `consented_at` TIMESTAMP NULL AFTER `consent_given`;
