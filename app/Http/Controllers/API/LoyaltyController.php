@@ -121,6 +121,7 @@ class LoyaltyController extends Controller
         try {
             $membershipId = $request->membershipId ?? 0;
             $mep = $request->mep ?? 0;
+
             $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                 ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
@@ -130,7 +131,6 @@ class LoyaltyController extends Controller
                 })->first();
             $program_id = isset($checkUserCardExist->program_id) ? $checkUserCardExist->program_id : 0;
             $card_id = isset($checkUserCardExist->card_id) ? $checkUserCardExist->card_id : 0;
-
 
             if (isset($request->membershipId) && $request->membershipId > 0) {
                 $LoyaltyProgram = LoyaltyProgram::getMembershipDetails($request->membershipId);
@@ -564,6 +564,23 @@ class LoyaltyController extends Controller
                     }
                     $usereward = $request->ur ?? 0;
                     $BookingAmount = ($request->order_amount - $discountCust);
+                    $walletTransactions = WalletModel::from('wallet as w')->where('w.AgencyID', $AgencyID)
+                        ->where('w.customer_id', $user->id)
+                        ->where('w.RefrenceNo', $request->ref)
+                        ->where('w.PType', 'DR')
+                        ->whereNull('w.CreditSystemID')
+                        ->where('w.IsCreditPayment', false)
+                        ->where('w.is_profit', false)
+                        ->exists();
+                    if ($walletTransactions) {
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 4001,
+                            ],
+                            'message' => 'Redemption already processed.'
+                        ]);
+                    }
                     if ($usereward == 1) {
                         $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
                         $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
@@ -608,6 +625,7 @@ class LoyaltyController extends Controller
                         'PaymentMode' => 'Redeem'
                     ];
                     $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
+
                     $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
                     $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
                     if ($status == 0) {
@@ -621,6 +639,7 @@ class LoyaltyController extends Controller
                         ]);
                     }
                     if (empty($checkReward)) {
+                        DB::commit();
                         return response()->json([
                             'status' => [
                                 'success' => true,
@@ -687,6 +706,7 @@ class LoyaltyController extends Controller
                         $results = DB::select('SELECT @status as status, @message as message, @redemption_id as redemption_id');
                         $status = $results[0]->status;
                         $message = $results[0]->message;
+                        $redemption_id = $results[0]->redemption_id;
 
                         if ($status === 'SUCCESS') {
                             if ($storeData && $storeData->vendortype == 1) {
@@ -700,6 +720,7 @@ class LoyaltyController extends Controller
                                     "payee_id" => $AgencyID,
                                     "RewardMode" => "Pay",
                                     'PlanType' => 10,
+                                    'redemption_id' => $redemption_id,
                                 ];
                                 $redemption = $this->rewardService->transferPoints($RewardRedeem);
                             }
@@ -713,6 +734,7 @@ class LoyaltyController extends Controller
                                     "points" => $rewardEarns,
                                     "RewardMode" => "Earn",
                                     'PlanType' => 10,
+                                    'redemption_id' => $redemption_id,
                                     'ReferenceNo' => $request->ref ?? '',
                                     'description' => 'Earn on Redeem Vendor ID - ' . $stores_id,
                                 ];

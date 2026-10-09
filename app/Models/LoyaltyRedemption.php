@@ -83,7 +83,8 @@ class LoyaltyRedemption extends Model
             'stores.store_name',
             'stores.vendortype',
             'reward.reward_name',
-            'reward.description'
+            'reward.description',
+            'reward_wallet_temp.points as CashBackPending',
         )->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
             ->where(function ($query) use ($post) {
                 if ($post['stores_id'] > 0) {
@@ -91,6 +92,7 @@ class LoyaltyRedemption extends Model
                 }
             })->leftJoin('reward', 'reward.reward_id', '=', 'redemption.reward_id')
             ->leftJoin('users', 'users.id', '=', 'redemption.user_id')
+            ->leftJoin('reward_wallet_temp', 'reward_wallet_temp.redemption_id', '=', 'redemption.redemption_id')
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
                     $query->where('redemption.AgencyID', $User->id);

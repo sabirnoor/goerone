@@ -20,6 +20,7 @@ class RewardWalletTemp extends Model
         'AgencyID',
         'UserSysId',
         'customer_id',
+        'redemption_id',
         'payer_id',
         'payee_id',
         'type',

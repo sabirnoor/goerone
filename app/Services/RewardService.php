@@ -21,6 +21,7 @@ class RewardService
             $points = $data['points'];
             $agencyId = $data['AgencyID'];
             $UserSysId = $data['UserSysId'] ?? 0;
+            $redemption_id = $data['redemption_id'] ?? null;
             $payerId = $data['payer_id'];
             $payeeId = $data['payee_id'];
             $description = $data['description'] ?? 'Points transfer';
@@ -54,6 +55,7 @@ class RewardService
                     'status' => RewardWallet::STATUS_SUCCESS,
                     'RewardMode' => $data['RewardMode'] ?? null,
                     'PlanType' => $data['PlanType'] ?? 0,
+                    'redemption_id' => $redemption_id ?? null,
                     'latitude' => $data['latitude'] ?? null,
                     'longitude' => $data['longitude'] ?? null,
                     'device_id' => $data['device_id'] ?? null,
@@ -74,6 +76,7 @@ class RewardService
                     'description' => $description,
                     'status' => RewardWallet::STATUS_SUCCESS,
                     'RewardMode' => $data['RewardMode'] ?? null,
+                    'redemption_id' => $redemption_id ?? null,
                     'PlanType' => $data['PlanType'] ?? 0,
                     'latitude' => $data['latitude'] ?? null,
                     'longitude' => $data['longitude'] ?? null,
@@ -147,6 +150,7 @@ class RewardService
             'RewardMode' => $data['RewardMode'] ?? null,
             'PlanType' => $data['PlanType'] ?? 0,
             'latitude' => $data['latitude'] ?? null,
+            'redemption_id' => $data['redemption_id'] ?? null,
             'longitude' => $data['longitude'] ?? null,
             'device_id' => $data['device_id'] ?? null,
             'ip_address' => $data['ip_address'] ?? request()->ip(),
