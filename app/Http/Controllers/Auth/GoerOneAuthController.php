@@ -138,7 +138,7 @@ class GoerOneAuthController extends Controller
             $testUser = User::with('UserMembership.usercard')->where('id', $request->customer_id)
                 ->where('AgencyID', $AgencyID)
                 ->whereIn('UserType', [0, 2])
-                ->where('GoerOne', 1)
+                // ->where('GoerOne', 1)
                 ->first();
 
             if (!$testUser) {
