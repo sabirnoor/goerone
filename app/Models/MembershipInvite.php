@@ -90,6 +90,18 @@ class MembershipInvite extends Model
             ->first();
     }
 
+    /**
+     * True when this customer holds an approved invitation for the plan.
+     * Call this in the membership purchase endpoint before charging for an invitation_required plan.
+     */
+    public static function isApprovedFor($userId, $programId)
+    {
+        return static::where('user_id', $userId)
+            ->where('program_id', $programId)
+            ->where('status', self::STATUS_APPROVED)
+            ->exists();
+    }
+
     /** Admin list: filter by status / plan / PAN, newest first. */
     public static function getInviteList($perPage, $post)
     {
