@@ -24,3 +24,62 @@ ALTER TABLE vouchers MODIFY COLUMN customer_type INT NULL;
 
 
 ALTER TABLE `voucher_orders` ADD `discount` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `total_amount`, ADD `owner_share` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `discount`, ADD `customer_share` DECIMAL(10,2) NOT NULL DEFAULT '0' AFTER `owner_share`;
+
+CREATE TABLE `membership_invites` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+    `program_id` INT NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+
+    `cibil_score` INT NULL,
+    `no_criminal_record` TINYINT(1) NOT NULL DEFAULT 0,
+    `income` DECIMAL(15,2) NULL,
+
+    `pan_number` VARCHAR(10) NULL,
+    `pan_verified` TINYINT(1) NOT NULL DEFAULT 0,
+
+    `photo_path` VARCHAR(255) NULL,
+    `photo_latitude` DECIMAL(10,7) NULL,
+    `photo_longitude` DECIMAL(10,7) NULL,
+
+    `social_media_details` JSON NULL,
+
+    -- 0 = Pending, 1 = Approved, 2 = Rejected
+    `status` TINYINT NOT NULL DEFAULT 0,
+
+    `reviewed_by` BIGINT UNSIGNED NULL,
+    `reviewed_at` TIMESTAMP NULL,
+
+    `rejection_reason` TEXT NULL,
+
+    `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (`id`),
+
+    INDEX `membership_invites_program_id_index` (`program_id`),
+    INDEX `membership_invites_user_id_index` (`user_id`),
+    INDEX `membership_invites_status_index` (`status`),
+    INDEX `membership_invites_reviewed_by_index` (`reviewed_by`),
+
+    CONSTRAINT `membership_invites_program_id_foreign`
+        FOREIGN KEY (`program_id`)
+        REFERENCES `loyalty_program` (`program_id`)
+        ON DELETE CASCADE,
+
+    CONSTRAINT `membership_invites_user_id_foreign`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `users` (`id`)
+        ON DELETE CASCADE,
+
+    CONSTRAINT `membership_invites_reviewed_by_foreign`
+        FOREIGN KEY (`reviewed_by`)
+        REFERENCES `users` (`id`)
+        ON DELETE SET NULL
+
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+ALTER TABLE `membership_invites`
+MODIFY COLUMN `status` TINYINT NOT NULL DEFAULT 0
+COMMENT '0 = Pending, 1 = Approved, 2 = Rejected';

@@ -11,6 +11,7 @@ use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\PanController;
 use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Http\Controllers\VoucherCheckoutController;
@@ -124,6 +125,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
+    Route::post('/pan-verify', [PanController::class, 'panverify']);
 });
 
 Route::middleware('apiKey')->group(function () {

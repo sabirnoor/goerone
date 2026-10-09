@@ -67,6 +67,10 @@ class User extends Authenticatable
     {
         return $this->hasOne(incorporation_details::class, 'UserSysId', 'id'); // Adjust model path if needed
     }
+    public function panRequests()
+    {
+        return $this->hasMany(PanRequest::class);
+    }
     public function symbal()
     {
         return $this->hasOne(mst_currency::class, 'id', 'CurrencyID'); // Adjust model path if needed
