@@ -79,15 +79,26 @@ class StoreAuthController extends Controller
 
     public function login(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
+        $IsAdmin = ($request->admin ?? 0);
+        if ($IsAdmin == 1) {
+            $request->validate([
+                'email' => 'required|email',
+            ]);
+        } else {
+            $request->validate([
+                'email' => 'required|email',
+                'password' => 'required',
+            ]);
+        }
+
+
         $token = trim($request->bearerToken());
+
         if (!$token || !$user = User::where('api_token', hash('sha256', $token))->first()) {
             return response()->json(['status' => false, 'message' => 'Unauthenticated', 'httpStatus' => 401, 'details' => 'Access denied: Invalid or unauthorized API key'], 401);
             // return response()->json(['error' => 'Invalid API key'], 401);
         }
+
         $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
         if (isset($request->logintype) && (int)$request->logintype === 1) {
 
@@ -125,7 +136,7 @@ class StoreAuthController extends Controller
         }
         $store = Store::where('email', $request->email)->first();
 
-        if (!$store || !Hash::check($request->password, $store->password)) {
+        if ((!$store || !Hash::check($request->password, $store->password)) && $IsAdmin == 0) {
             // throw ValidationException::withMessages([
             //     'email' => ['The provided credentials are incorrect.'],
             // ]);

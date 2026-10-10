@@ -9,6 +9,7 @@ use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\VoucherCartController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
+use App\Http\Controllers\Auth\StoreAuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\PanController;
@@ -133,9 +134,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
     Route::post('/pan-verify', [PanController::class, 'panverify']);
-
 });
+Route::any('/store/login', [StoreAuthController::class, 'login']);
+Route::post('/store/register', [StoreAuthController::class, 'register']);
 
+Route::middleware('auth:store')->group(function () {
+    Route::post('/store/logout', [StoreAuthController::class, 'logout']);
+    Route::get('/store/profile', [StoreAuthController::class, 'profile']);
+});
 Route::middleware('apiKey')->group(function () {
     Route::prefix('GoerOne')->group(function () {
         Route::post('login', [GoerOneAuthController::class, 'login']);
