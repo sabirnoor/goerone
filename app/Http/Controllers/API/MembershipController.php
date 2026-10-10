@@ -4,7 +4,9 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyProgram;
+use App\Models\MembershipInvite;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 /**
@@ -275,6 +277,265 @@ class MembershipController extends Controller
                 ],
                 'message' => $th->getMessage(),
             ]);
+        }
+    }
+    
+    // ------------------------------------------------------------------
+    // Invite-only memberships: "Request consideration"
+    // ------------------------------------------------------------------
+ 
+    private function inviteError($message, $httpStatus = 422, $errors = null)
+    {
+        $body = [
+            'status' => [
+                'success' => false,
+                'httpStatus' => $httpStatus,
+            ],
+            'message' => $message,
+        ];
+        if ($errors) {
+            $body['error'] = $errors;
+        }
+        return response()->json($body);
+    }
+ 
+    /**
+     * Customer: apply to be considered for an invite-only membership.
+     * POST { program_id, pan_number, pan_verified, has_criminal_record, social_media: {instagram, facebook, linkedin, x} }
+     */
+    public function requestConsideration(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return $this->inviteError('Please log in to continue', 401);
+            }
+ 
+            $validator = Validator::make($request->all(), [
+                'program_id' => 'required|integer|exists:loyalty_program,program_id',
+                'pan_number' => ['required', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'],
+                'pan_verified' => 'required|accepted',
+                'consent' => 'required|accepted',
+                'has_criminal_record' => 'nullable|boolean',
+                'social_media' => 'nullable|array',
+                'social_media.instagram' => 'nullable|string|max:191',
+                'social_media.facebook' => 'nullable|string|max:191',
+                'social_media.linkedin' => 'nullable|string|max:191',
+                'social_media.x' => 'nullable|string|max:191',
+            ], [
+                'pan_number.regex' => 'Enter a valid PAN (e.g. ABCDE1234F).',
+                'pan_verified.accepted' => 'Verify your PAN before submitting.',
+                'consent.accepted' => 'You need to give your consent to send this request.',
+            ]);
+ 
+            if ($validator->fails()) {
+                return $this->inviteError(
+                    implode(', ', $validator->errors()->all()),
+                    422,
+                    $validator->messages()
+                );
+            }
+ 
+            $program = LoyaltyProgram::where('program_id', $request->program_id)->first();
+            if (!$program || !$program->is_active) {
+                return $this->inviteError('This membership is not available right now', 404);
+            }
+            if (!$program->invitation_required) {
+                return $this->inviteError('This membership does not need an invitation. You can join it directly.');
+            }
+ 
+            // Keep only the handles the customer actually filled in
+            $social = collect($request->input('social_media', []))
+                ->only(['instagram', 'facebook', 'linkedin', 'x'])
+                ->map(fn ($v) => trim((string) $v))
+                ->filter(fn ($v) => $v !== '')
+                ->all();
+ 
+            $result = DB::transaction(function () use ($request, $user, $social) {
+                // Re-check inside the transaction so a double-click can't create two requests
+                $existing = MembershipInvite::where('user_id', $user->id)
+                    ->where('program_id', $request->program_id)
+                    ->whereIn('status', [MembershipInvite::STATUS_PENDING, MembershipInvite::STATUS_APPROVED])
+                    ->lockForUpdate()
+                    ->first();
+ 
+                if ($existing) {
+                    return ['existing' => $existing];
+                }
+ 
+                $invite = MembershipInvite::create([
+                    'program_id' => $request->program_id,
+                    'user_id' => $user->id,
+                    'pan_number' => strtoupper($request->pan_number),
+                    'pan_verified' => 1,
+                    'consent_given' => 1,
+                    'consented_at' => now(),
+                    // The form asks "Do you have a criminal record?" (default No); the column stores the opposite
+                    'no_criminal_record' => $request->boolean('has_criminal_record') ? 0 : 1,
+                    'social_media_details' => empty($social) ? null : $social,
+                    'status' => MembershipInvite::STATUS_PENDING,
+                ]);
+ 
+                return ['created' => $invite];
+            });
+ 
+            if (isset($result['existing'])) {
+                $label = $result['existing']->status === MembershipInvite::STATUS_APPROVED
+                    ? 'Your request for this membership is already approved.'
+                    : 'You have already requested this membership. We will get back to you soon.';
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 409,
+                    ],
+                    'message' => $label,
+                    'data' => [
+                        'already_requested' => true,
+                        'invite_status' => $result['existing']->status,
+                        'invite_status_label' => $result['existing']->status_label,
+                    ],
+                ]);
+            }
+ 
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => 'Request submitted. We will review it and get back to you.',
+                'data' => [
+                    'id' => $result['created']->id,
+                    'invite_status' => $result['created']->status,
+                ],
+            ]);
+        } catch (\Throwable $th) {
+            return $this->inviteError($th->getMessage(), 500);
+        }
+    }
+ 
+    /**
+     * Customer: has this user already requested this plan? Used to show "Already requested" when the modal opens.
+     * GET membership-invite/status/{program_id}
+     */
+    public function myInviteStatus(Request $request, $program_id)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return $this->inviteError('Please log in to continue', 401);
+            }
+ 
+            // Latest request of any status, so a rejection can be shown with its reason
+            $invite = MembershipInvite::where('user_id', $user->id)
+                ->where('program_id', $program_id)
+                ->latest('id')
+                ->first();
+ 
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => 'Success',
+                'data' => $invite ? [
+                    'requested' => in_array($invite->status, [MembershipInvite::STATUS_PENDING, MembershipInvite::STATUS_APPROVED], true),
+                    'invite_status' => $invite->status,
+                    'invite_status_label' => $invite->status_label,
+                    'rejection_reason' => $invite->rejection_reason,
+                    'created_at' => $invite->created_at,
+                ] : [
+                    'requested' => false,
+                    'invite_status' => null,
+                ],
+            ]);
+        } catch (\Throwable $th) {
+            return $this->inviteError($th->getMessage(), 500);
+        }
+    }
+ 
+    /**
+     * Admin: all invite requests. POST { status?, program_id?, keyword? (PAN), per_page? }
+     */
+    public function inviteList(Request $request)
+    {
+        try {
+            $perPage = ($request->per_page > 0) ? (int) $request->per_page : 25;
+            $post = [
+                'status' => $request->input('status'),
+                'program_id' => $request->input('program_id'),
+                'keyword' => $request->input('keyword'),
+            ];
+ 
+            $result = MembershipInvite::getInviteList($perPage, $post);
+ 
+            // Only the user fields the admin screen needs (columns that don't exist on users are skipped)
+            $result->getCollection()->transform(function ($invite) {
+                $row = $invite->toArray();
+                $row['user'] = $invite->user ? $invite->user->only(['id', 'name', 'email', 'mobile', 'phone']) : null;
+                $row['reviewer'] = $invite->reviewer ? $invite->reviewer->only(['id', 'name']) : null;
+                return $row;
+            });
+ 
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => 'Success',
+                'data' => $result,
+            ]);
+        } catch (\Throwable $th) {
+            return $this->inviteError($th->getMessage(), 500);
+        }
+    }
+ 
+    /**
+     * Admin: approve or reject a pending request. POST { action: approve|reject, rejection_reason? (required on reject) }
+     */
+    public function reviewInvite(Request $request, $id)
+    {
+        try {
+            $admin = $request->user();
+ 
+            $validator = Validator::make($request->all(), [
+                'action' => 'required|in:approve,reject',
+                'rejection_reason' => 'nullable|required_if:action,reject|string|max:1000',
+            ], [
+                'rejection_reason.required_if' => 'Add a reason for rejecting this request.',
+            ]);
+            if ($validator->fails()) {
+                return $this->inviteError(implode(', ', $validator->errors()->all()), 422, $validator->messages());
+            }
+ 
+            $invite = MembershipInvite::find($id);
+            if (!$invite) {
+                return $this->inviteError('Request not found', 404);
+            }
+            if ($invite->status !== MembershipInvite::STATUS_PENDING) {
+                return $this->inviteError('This request has already been reviewed.', 409);
+            }
+ 
+            $approve = $request->action === 'approve';
+            $invite->status = $approve ? MembershipInvite::STATUS_APPROVED : MembershipInvite::STATUS_REJECTED;
+            $invite->rejection_reason = $approve ? null : $request->rejection_reason;
+            $invite->reviewed_by = $admin ? $admin->id : null;
+            $invite->reviewed_at = now();
+            $invite->save();
+ 
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => $approve ? 'Request approved' : 'Request rejected',
+                'data' => [
+                    'id' => $invite->id,
+                    'invite_status' => $invite->status,
+                    'invite_status_label' => $invite->status_label,
+                ],
+            ]);
+        } catch (\Throwable $th) {
+            return $this->inviteError($th->getMessage(), 500);
         }
     }
 }

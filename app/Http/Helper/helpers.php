@@ -795,3 +795,32 @@ function HttpRequest($URL, $request_array, $AgencyID, $tokens = null, $method = 
     curl_close($curl);
     return $response;
 }
+
+function SurepassPanVerify($data, $IsProd = 0)
+    {
+        if (!empty($data)) {
+            $curl = curl_init();
+            unset($data['user_id']);
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => 'https://kyc-api.surepass.app/api/v1/pan/pan-comprehensive',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 0,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => json_encode(['id_number' => $data['pan']]),
+                CURLOPT_HTTPHEADER => array(
+                    'Authorization: Bearer ' . env('SUREPASS_BASE_Bearer'),
+                    'Content-Type: application/json'
+                ),
+            ));
+            $outputH = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            curl_close($curl);
+            return ['response' => json_decode($outputH, 1), 'httpCode' => $httpCode];
+        } else {
+            return false;
+        }
+    }
