@@ -84,8 +84,25 @@ class LoyaltyRedemption extends Model
             'stores.vendortype',
             'reward.reward_name',
             'reward.description',
-            'reward_wallet_temp.points as CashBackPending',
-        )->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
+            // 'reward_wallet_temp.points as CashBackPending',
+            // 'reward_wallet.points as CashBackApproved',
+        ) // Single amount: approved if present, otherwise pending, otherwise 0
+            ->selectRaw('
+                CASE
+                    WHEN COALESCE(reward_wallet.points, 0) > 0 THEN reward_wallet.points
+                    WHEN COALESCE(reward_wallet_temp.points, 0) > 0 THEN reward_wallet_temp.points
+                    ELSE 0
+                END AS CashBack
+            ')
+            // Status: 1 = approved, 0 = pending, NULL = no cashback
+            ->selectRaw('
+                CASE
+                    WHEN COALESCE(reward_wallet.points, 0) > 0 THEN 1
+                    WHEN COALESCE(reward_wallet_temp.points, 0) > 0 THEN 0
+                    ELSE 0
+                END AS cashbackstatus
+            ')
+            ->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
             ->where(function ($query) use ($post) {
                 if ($post['stores_id'] > 0) {
                     $query->where('redemption.stores_id', $post['stores_id']);
@@ -93,6 +110,7 @@ class LoyaltyRedemption extends Model
             })->leftJoin('reward', 'reward.reward_id', '=', 'redemption.reward_id')
             ->leftJoin('users', 'users.id', '=', 'redemption.user_id')
             ->leftJoin('reward_wallet_temp', 'reward_wallet_temp.redemption_id', '=', 'redemption.redemption_id')
+            ->leftJoin('reward_wallet', 'reward_wallet.redemption_id', '=', 'redemption.redemption_id')
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
                     $query->where('redemption.AgencyID', $User->id);
