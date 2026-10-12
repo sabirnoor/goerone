@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\RewardWalletTemp;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\WalletModel;
@@ -418,6 +419,107 @@ class WalletController extends Controller
                     'data' => $result,
                     'message' => 'Reward ledger successful'
                 ]);
+            });
+        } catch (\Throwable $th) {
+            return [
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 201,
+                ],
+                'message' => $th->getMessage(),
+            ];
+        }
+    }
+    public function TempRewardProcessed(Request $request)
+    {
+        $user = $request->user();
+        $validator = Validator::make($request->all(), [
+            'ledger_id' => [
+                'required',
+                'integer',
+                'exists:reward_wallet_temp,id',
+                Rule::exists('reward_wallet_temp', 'id')->where(function ($query) use ($user) {
+                    $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+                    return $query->where('AgencyID', $AgencyID);
+                }),
+            ]
+        ]);
+        if ($validator->fails()) {
+            $errors = json_encode($validator->messages());
+            $errorArray = [];
+            if (json_decode($errors, 1)) {
+                foreach (json_decode($errors, 1) as $err) {
+                    foreach ($err as $errs) {
+                        $errorArray[] = ($errs);
+                    }
+                }
+            }
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 422,
+                ],
+                'message' => implode(',', $errorArray),
+                'error' => $validator->messages(),
+            ]);
+        }
+
+        try {
+            $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
+            $UserSysId = $request->user()->id;
+            $validated = $request->all();
+
+            $validated['AgencyID'] = $AgencyID;
+            $validated['UserSysId'] = $UserSysId;
+            $authUser = $request->user();
+
+            if ($authUser instanceof Store) {
+                $validated['store_id'] = $request->user()->id ?? 0;
+            }
+
+            return DB::transaction(function () use ($validated, $request) {
+                $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
+                $RewardWalletTemp = $this->rewardService->getTempRewardDetails($validated['customer_id'] ?? null, $validated['AgencyID'], $validated);
+                if ($RewardWalletTemp) {
+                    $RewardInsert = [
+                        'AgencyID' => $RewardWalletTemp->AgencyID,
+                        'UserSysId' =>  $RewardWalletTemp->UserSysId,
+                        "payer_id" => $RewardWalletTemp->payer_id,
+                        "payee_id" => $RewardWalletTemp->payee_id,
+                        "points" => $RewardWalletTemp->points ?? 0,
+                        "RewardMode" => "Earn",
+                        'PlanType' => 10,
+                        'redemption_id' => $RewardWalletTemp->redemption_id,
+                        'ReferenceNo' => $RewardWalletTemp->ReferenceNo,
+                        'description' => $RewardWalletTemp->description,
+                    ];
+
+                    $result = $this->rewardService->addPoints($RewardInsert);
+
+                    $payload['is_store_approved']  = ($validated['store_id'] > 0) ? 1 : 0;
+                    $payload['approved_by'] = $request->user()->id;
+                    $payload['approved_at']   = now();
+                    $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
+                    RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+
+                    return response()->json([
+                        'status' => [
+                            'success' => true,
+                            'httpStatus' => 200,
+                        ],
+                        'data' => $result,
+                        'message' => 'Reward ledger processed successful'
+                    ]);
+                } else {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 404,
+                        ],
+                        'data' => null,
+                        'message' => 'Reward ledger not found'
+                    ]);
+                }
             });
         } catch (\Throwable $th) {
             return [

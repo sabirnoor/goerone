@@ -161,6 +161,7 @@ Route::middleware('apiKey')->group(function () {
 
     Route::post('/reward/reward-ledger', [WalletController::class, 'RewardLedger']);
     Route::post('/reward/reward-ledger-temp', [WalletController::class, 'RewardLedgerTemp']);
+    Route::post('/reward/temp-reward-processed', [WalletController::class, 'TempRewardProcessed']);
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');

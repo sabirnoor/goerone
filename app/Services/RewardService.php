@@ -146,7 +146,7 @@ class RewardService
             'points' => $data['points'],
             'balance_points' => $currentBalance + $data['points'],
             'description' => $data['description'] ?? 'Points credited',
-            'status' => RewardWalletTemp::STATUS_SUCCESS,
+            'status' => RewardWalletTemp::STATUS_PENDING,
             'RewardMode' => $data['RewardMode'] ?? null,
             'PlanType' => $data['PlanType'] ?? 0,
             'latitude' => $data['latitude'] ?? null,
@@ -227,7 +227,7 @@ class RewardService
     }
     public function getCustomerNetBalanceTemp(int $customerId, ?int $agencyId = null, ?string $referneceNo = null): float
     {
-        $query = RewardWalletTemp::where('status', RewardWalletTemp::STATUS_SUCCESS);
+        $query = RewardWalletTemp::where('status', RewardWalletTemp::STATUS_PENDING);
 
         if ($agencyId) {
             $query->where('AgencyID', $agencyId);
@@ -456,7 +456,7 @@ class RewardService
             ->leftJoin('users as payer', 'payer.id', '=', 'reward_wallet_temp.payer_id')
             ->leftJoin('users as payee', 'payee.id', '=', 'reward_wallet_temp.payee_id')
             ->leftJoin('redemption', 'redemption.redemption_id', '=', 'reward_wallet_temp.redemption_id')
-            ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
+            // ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
             ->orderBy('reward_wallet_temp.id', 'desc')
             ->where(
                 function ($query) use ($validated) {
@@ -763,5 +763,80 @@ class RewardService
             ->where('PlanType', 1)->where('type', 'DR')
             ->where('status', 'SUCCESS')->first();
         return $latestEntry ? $latestEntry->points : 0;
+    }
+
+    public function getTempRewardDetails(?int $customerId = null, ?int $agencyId = null, $validated = null)
+    {
+        $query = RewardWalletTemp::select(
+            'reward_wallet_temp.id',
+            'reward_wallet_temp.AgencyID',
+            'reward_wallet_temp.UserSysId',
+            'reward_wallet_temp.payer_id',
+            'reward_wallet_temp.payee_id',
+            'reward_wallet_temp.redemption_id',
+            'reward_wallet_temp.ReferenceNo',
+            'reward_wallet_temp.type',
+            'reward_wallet_temp.points',
+            'reward_wallet_temp.balance_points',
+            'reward_wallet_temp.description',
+            'reward_wallet_temp.status',
+            'reward_wallet_temp.RewardMode',
+            'reward_wallet_temp.PlanType',
+            'reward_wallet_temp.created_at',
+            'redemption.order_amount',
+
+            'payer.name as payer_name',
+            'payer.email as payer_email',
+            'payer.mobile as payer_mobile',
+
+            'payee.name as payee_name',
+            'payee.email as payee_email',
+            'payee.mobile as payee_mobile',
+
+            'cus.name',
+            'cus.mobile',
+            'cus.email',
+            'cus.UserType',
+            'cus.countrycode',
+        )
+            ->leftJoin('users as cus', 'cus.id', '=', 'reward_wallet_temp.customer_id')
+            ->leftJoin('users as payer', 'payer.id', '=', 'reward_wallet_temp.payer_id')
+            ->leftJoin('users as payee', 'payee.id', '=', 'reward_wallet_temp.payee_id')
+            ->leftJoin('redemption', 'redemption.redemption_id', '=', 'reward_wallet_temp.redemption_id')
+            ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
+            ->orderBy('reward_wallet_temp.id', 'desc')
+            ->where(
+                function ($query) use ($validated) {
+                    if (isset($validated['store_id']) && $validated['store_id'] > 0) {
+                        return $query->where('redemption.stores_id', $validated['store_id']);
+                    }
+                    if (!empty($validated['bookingID'])) {
+                        return $query->where('reward_wallet_temp.ReferenceNo', $validated['bookingID']);
+                    }
+                    if (!empty($validated['FromDate']) && !empty($validated['ToDate'])) {
+                        return $query->whereBetween('reward_wallet_temp.created_at', [date('Y-m-d', strtotime($validated['FromDate'])) . " 00:00:00", date('Y-m-d', strtotime($validated['ToDate'])) . " 23:59:59"]);
+                    }
+                }
+            );
+
+        // Filter by customer
+        if ($customerId) {
+            $query->where(function ($q) use ($customerId) {
+                $q->where('reward_wallet_temp.customer_id', $customerId);
+            });
+        }
+        // Filter by AgencyID
+        if ($agencyId) {
+            $query->where('reward_wallet_temp.AgencyID', $agencyId);
+        }
+
+        $query->orderBy('reward_wallet_temp.created_at', 'desc')
+            ->orderBy('reward_wallet_temp.id', 'desc');
+
+        // Pagination
+        $paginator = $query->first();
+
+
+        return $paginator;
     }
 }
