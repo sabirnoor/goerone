@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Store;
 use App\Models\User;
 use App\Models\WalletModel;
 use Illuminate\Http\Request;
@@ -402,6 +403,11 @@ class WalletController extends Controller
             $validated['FromDate'] = (isset($request->FromDate)) ? $request->FromDate : null;
             $validated['ToDate'] = (isset($request->ToDate)) ? $request->ToDate : null;
             $validated['bookingID'] = (isset($request->bookingID)) ? $request->bookingID : null;
+            $authUser = $request->user();
+
+            if ($authUser instanceof Store) {
+                $validated['store_id'] = $request->user()->id ?? 0;
+            }
             return DB::transaction(function () use ($validated, $perPage) {
                 $result = $this->rewardService->getCustomerLedgerTemp($validated['customer_id'] ?? null, $validated['AgencyID'], $perPage, $validated);
                 return response()->json([

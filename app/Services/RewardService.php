@@ -436,6 +436,7 @@ class RewardService
             'reward_wallet_temp.RewardMode',
             'reward_wallet_temp.PlanType',
             'reward_wallet_temp.created_at',
+            'redemption.order_amount',
 
             'payer.name as payer_name',
             'payer.email as payer_email',
@@ -454,10 +455,14 @@ class RewardService
             ->leftJoin('users as cus', 'cus.id', '=', 'reward_wallet_temp.customer_id')
             ->leftJoin('users as payer', 'payer.id', '=', 'reward_wallet_temp.payer_id')
             ->leftJoin('users as payee', 'payee.id', '=', 'reward_wallet_temp.payee_id')
+            ->leftJoin('redemption', 'redemption.redemption_id', '=', 'reward_wallet_temp.redemption_id')
             ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
             ->orderBy('reward_wallet_temp.id', 'desc')
             ->where(
                 function ($query) use ($validated) {
+                    if (isset($validated['store_id']) && $validated['store_id'] > 0) {
+                        return $query->where('redemption.stores_id', $validated['store_id']);
+                    }
                     if (!empty($validated['bookingID'])) {
                         return $query->where('reward_wallet_temp.ReferenceNo', $validated['bookingID']);
                     }
