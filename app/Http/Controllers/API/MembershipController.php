@@ -121,7 +121,9 @@ class MembershipController extends Controller
                     'membership_type' => 'nullable|in:free,paid',
                     'membership_amount' => 'nullable|required_if:membership_type,paid|numeric|min:0',
                     'invitation_required' => 'nullable|boolean',
-                    'welcome_coin' => 'nullable|integer',
+                    'welcome_coin' => 'nullable|integer|min:0',
+                    'referral_coin' => 'nullable|integer|min:0',
+                    'max_referral_account' => 'nullable|integer|min:1',
                     'membership_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                 ]);
 
@@ -173,7 +175,9 @@ class MembershipController extends Controller
                     'membership_type' => $request->membership_type ?? 'free',
                     'membership_amount' => ($request->membership_type ?? 'free') === 'paid' ? $request->membership_amount : null,
                     'invitation_required' => $request->boolean('invitation_required'),
-                    'welcome_coin' => $request->welcome_coin
+                    'welcome_coin' => $request->filled('welcome_coin') ? (int) $request->welcome_coin : null,
+                    'referral_coin' => $request->filled('referral_coin') ? (int) $request->referral_coin : null,
+                    'max_referral_account' => $request->filled('max_referral_account') ? (int) $request->max_referral_account : null,
                 ];
 
                 // Only touch membership_logo when a new file is uploaded or an explicit
