@@ -29,7 +29,7 @@ class CustomerVoucher extends Model
     }
     public function voucher()
     {
-        return $this->belongsTo(Vouchers::class, 'voucher_id');
+        return $this->belongsTo(Vouchers::class, 'voucher_id')->with('store:id,store_name,address,phone');
     }
     public function orderItem()
     {

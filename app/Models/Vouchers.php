@@ -50,7 +50,10 @@ class Vouchers extends Model
     /**
      * Relationships
      */
-
+    public function store()
+    {
+        return $this->belongsTo(Store::class, 'store_id');
+    }
     /** Vouchers that can be sold on the portal right now */
     public function scopePurchasable(Builder $q): Builder
     {
@@ -240,8 +243,8 @@ class Vouchers extends Model
             });
 
         return self::withMemberships(
-        $query->orderBy('vouchers.id', 'DESC')
-            ->paginate($perPage, ['*'], 'voucher_page', $page)
+            $query->orderBy('vouchers.id', 'DESC')
+                ->paginate($perPage, ['*'], 'voucher_page', $page)
         );
     }
 }

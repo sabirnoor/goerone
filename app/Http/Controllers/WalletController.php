@@ -433,6 +433,7 @@ class WalletController extends Controller
     public function TempRewardProcessed(Request $request)
     {
         $user = $request->user();
+
         $validator = Validator::make($request->all(), [
             'ledger_id' => [
                 'required',
@@ -481,7 +482,8 @@ class WalletController extends Controller
             return DB::transaction(function () use ($validated, $request) {
                 $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
                 $RewardWalletTemp = $this->rewardService->getTempRewardDetails($validated['customer_id'] ?? null, $validated['AgencyID'], $validated);
-
+                $is_rejected = $request->is_rejected ?? 0;
+                $remarks = $request->remarks ?? '';
                 if ($RewardWalletTemp) {
                     $RewardInsert = [
                         'AgencyID' => $RewardWalletTemp->AgencyID,
@@ -495,14 +497,22 @@ class WalletController extends Controller
                         'ReferenceNo' => $RewardWalletTemp->ReferenceNo,
                         'description' => $RewardWalletTemp->description,
                     ];
-
-                    $result = $this->rewardService->addPoints($RewardInsert);
-
-                    $payload['is_store_approved']  = ($validated['store_id'] > 0) ? 1 : 0;
-                    $payload['approved_by'] = $request->user()->id;
-                    $payload['approved_at']   = now();
-                    $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
-                    RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+                    if ($is_rejected == 1) {
+                        $result = null;
+                        $payload['is_store_approved']  = ($validated['store_id'] > 0) ? 1 : 0;
+                        $payload['approved_by'] = $request->user()->id;
+                        $payload['approved_at']   = now();
+                        $payload['description']   = $RewardWalletTemp->description . ' - ' . $remarks;
+                        $payload['status']   = RewardWalletTemp::STATUS_FAILED;
+                        RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+                    } else {
+                        $result = $this->rewardService->addPoints($RewardInsert);
+                        $payload['is_store_approved']  = ($validated['store_id'] > 0) ? 1 : 0;
+                        $payload['approved_by'] = $request->user()->id;
+                        $payload['approved_at']   = now();
+                        $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
+                        RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+                    }
 
                     return response()->json([
                         'status' => [

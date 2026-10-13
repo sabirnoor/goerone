@@ -294,7 +294,7 @@ class WebhookController extends Controller
 
             Storage::disk('public')->put('logs/Webhook/easebuzz/' . $currentDate . '_response.json', json_encode($post));
 
-            $post = json_decode('{"key":"5D2J88C2J","furl":"https:\/\/goertrip.club\/payment\/payment-success?planType=10&BookingID=TXN1791195021764","hash":"e218f4283eb59958b0f4450817ff8dc5b82d76ceb628a82eeaf90a4fa271a7e384896286c6649e6a07d6cddb9bdbbafc3e53cc9eebba3fc34d0e548859e46445","mode":"NB","surl":"https:\/\/goertrip.club\/payment\/payment-success?planType=10&BookingID=TXN1791195021764","udf1":"TXN1791195021764","udf2":"1","udf3":"GoerOne","udf4":"66","udf5":"42","udf6":"INR","udf7":"76c1a9360eb2c2af0b1c22c62c724d9ab71396818102b29eafd78e3f357b97c75ad2e8aff9380b8c3810f3dab0e3704be13361ccf951cd9ab5f785dc5c2432eb0c92170070fd213baa430109a27b8c503b7294f67f373701f37394f0fdf985cab4e7290a51a84f7757a454edb4f4bca396405bfe06a93a11f8ed0016b09ceaf2","udf8":null,"udf9":null,"email":"testcompany@gmail.com","error":"Transaction is successful.","phone":"9886567097","txnid":"TXN1791195021764","udf10":null,"amount":"500.0","status":"success","upi_va":"NA","PG_TYPE":"NA","addedon":"2026-10-05 10:10:25.000000","cardnum":"NA","bankcode":"NA","auth_code":null,"bank_name":"ICICI Bank","card_type":"NA","easepayid":"S261005076281R","firstname":"test company","productinfo":"Store Purchase","service_tax":"2.25","auth_ref_num":"NA","bank_ref_num":"600824737761","cardCategory":"NA","issuing_bank":"NA","name_on_card":"NA","discount_code":"NA","error_Message":"Transaction is successful.","merchant_logo":"NA","payment_source":"Easebuzz","service_charge":"12.5","unmappedstatus":"NA","discount_amount":"0.0","net_amount_debit":"500.0","payment_category":"DEFAULT","settlement_amount":"485.25","cancellation_reason":"NA","cash_back_percentage":"50.0","deduction_percentage":"2.5"}', 1);
+            //$post = json_decode('{"key":"5D2J88C2J","furl":"https:\/\/goertrip.club\/payment\/payment-success?planType=10&BookingID=TXN1791195021764","hash":"e218f4283eb59958b0f4450817ff8dc5b82d76ceb628a82eeaf90a4fa271a7e384896286c6649e6a07d6cddb9bdbbafc3e53cc9eebba3fc34d0e548859e46445","mode":"NB","surl":"https:\/\/goertrip.club\/payment\/payment-success?planType=10&BookingID=TXN1791195021764","udf1":"TXN1791195021764","udf2":"1","udf3":"GoerOne","udf4":"66","udf5":"42","udf6":"INR","udf7":"76c1a9360eb2c2af0b1c22c62c724d9ab71396818102b29eafd78e3f357b97c75ad2e8aff9380b8c3810f3dab0e3704be13361ccf951cd9ab5f785dc5c2432eb0c92170070fd213baa430109a27b8c503b7294f67f373701f37394f0fdf985cab4e7290a51a84f7757a454edb4f4bca396405bfe06a93a11f8ed0016b09ceaf2","udf8":null,"udf9":null,"email":"testcompany@gmail.com","error":"Transaction is successful.","phone":"9886567097","txnid":"TXN1791195021764","udf10":null,"amount":"500.0","status":"success","upi_va":"NA","PG_TYPE":"NA","addedon":"2026-10-05 10:10:25.000000","cardnum":"NA","bankcode":"NA","auth_code":null,"bank_name":"ICICI Bank","card_type":"NA","easepayid":"S261005076281R","firstname":"test company","productinfo":"Store Purchase","service_tax":"2.25","auth_ref_num":"NA","bank_ref_num":"600824737761","cardCategory":"NA","issuing_bank":"NA","name_on_card":"NA","discount_code":"NA","error_Message":"Transaction is successful.","merchant_logo":"NA","payment_source":"Easebuzz","service_charge":"12.5","unmappedstatus":"NA","discount_amount":"0.0","net_amount_debit":"500.0","payment_category":"DEFAULT","settlement_amount":"485.25","cancellation_reason":"NA","cash_back_percentage":"50.0","deduction_percentage":"2.5"}', 1);
             if ($pgsource == '2') {
                 $payloadData = self::SetDataCashfree($post);
             } elseif ($pgsource == '5') {
@@ -365,7 +365,10 @@ class WebhookController extends Controller
                 'updated_at' => $currentDate
             ];
             $existsuccess = PaymentTransaction::where('agency_id', $AgencyID)->where('status', 'success')->where('txnid', $txnid)->exists();
-            $transaction = PaymentTransaction::insertGetId($transactionData);
+            //$transaction = PaymentTransaction::insertGetId($transactionData);
+            if (!$existsuccess) {
+                $transaction = PaymentTransaction::insertGetId($transactionData);
+            }
 
             if ($status === 'success' && !$existsuccess) {
                 $Walletstatus = 0;
@@ -412,10 +415,8 @@ class WebhookController extends Controller
                     } else {
                         $bookingProcess = decryptData($udf7, $AgencyDetails->api_key);
                     }
-                    pr($bookingProcess);
                     $bookingProcess = json_decode($bookingProcess, 1);
-                    pr($bookingProcess);
-                    die;
+
                     if ($udf2 == 1 && $Walletstatus == 1) { // Flight booking process
                         Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
 
