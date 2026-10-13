@@ -87,21 +87,43 @@ class LoyaltyRedemption extends Model
             // 'reward_wallet_temp.points as CashBackPending',
             // 'reward_wallet.points as CashBackApproved',
         ) // Single amount: approved if present, otherwise pending, otherwise 0
+            // ->selectRaw('
+            //     CASE
+            //         WHEN COALESCE(reward_wallet.points, 0) > 0 THEN reward_wallet.points
+            //         WHEN reward_wallet_temp.status = PENDING AND COALESCE(reward_wallet_temp.points, 0) > 0 THEN reward_wallet_temp.points
+            //         ELSE 0
+            //     END AS CashBack
+            // ')
+            // // Status: 1 = approved, 0 = pending, NULL = no cashback
+            // ->selectRaw('
+            //     CASE
+            //         WHEN COALESCE(reward_wallet.points, 0) > 0 THEN 1
+            //         WHEN reward_wallet_temp.status = PENDING AND COALESCE(reward_wallet_temp.points, 0) > 0 THEN 0
+            //         ELSE 0
+            //     END AS cashbackstatus
+            // ')
+
             ->selectRaw('
                 CASE
-                    WHEN COALESCE(reward_wallet.points, 0) > 0 THEN reward_wallet.points
-                    WHEN COALESCE(reward_wallet_temp.points, 0) > 0 THEN reward_wallet_temp.points
+                    WHEN COALESCE(reward_wallet.points, 0) > 0
+                        THEN reward_wallet.points
+                    WHEN reward_wallet_temp.status = ?
+                        AND COALESCE(reward_wallet_temp.points, 0) > 0
+                        THEN reward_wallet_temp.points
                     ELSE 0
                 END AS CashBack
-            ')
-            // Status: 1 = approved, 0 = pending, NULL = no cashback
+            ', ['PENDING'])
+
             ->selectRaw('
                 CASE
-                    WHEN COALESCE(reward_wallet.points, 0) > 0 THEN 1
-                    WHEN COALESCE(reward_wallet_temp.points, 0) > 0 THEN 0
+                    WHEN COALESCE(reward_wallet.points, 0) > 0
+                        THEN 1
+                    WHEN reward_wallet_temp.status = ?
+                        AND COALESCE(reward_wallet_temp.points, 0) > 0
+                        THEN 0
                     ELSE 0
                 END AS cashbackstatus
-            ')
+            ', ['PENDING'])
             ->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
             ->where(function ($query) use ($post) {
                 if ($post['stores_id'] > 0) {

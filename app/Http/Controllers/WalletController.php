@@ -471,6 +471,7 @@ class WalletController extends Controller
 
             $validated['AgencyID'] = $AgencyID;
             $validated['UserSysId'] = $UserSysId;
+            $validated['status'] = 'PENDING';
             $authUser = $request->user();
 
             if ($authUser instanceof Store) {
@@ -480,6 +481,7 @@ class WalletController extends Controller
             return DB::transaction(function () use ($validated, $request) {
                 $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
                 $RewardWalletTemp = $this->rewardService->getTempRewardDetails($validated['customer_id'] ?? null, $validated['AgencyID'], $validated);
+
                 if ($RewardWalletTemp) {
                     $RewardInsert = [
                         'AgencyID' => $RewardWalletTemp->AgencyID,

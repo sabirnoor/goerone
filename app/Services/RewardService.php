@@ -109,6 +109,7 @@ class RewardService
         $currentBalance = $this->getCustomerNetBalance($data['payee_id'], $data['AgencyID']);
         // pr($currentBalance);
         // die;
+
         return RewardWallet::create([
             'ReferenceNo' => $data['ReferenceNo'] ?? RewardWallet::generateTxnRef('EAR'),
             'AgencyID' => $data['AgencyID'],
@@ -121,6 +122,7 @@ class RewardService
             'balance_points' => $currentBalance + $data['points'],
             'description' => $data['description'] ?? 'Points credited',
             'status' => RewardWallet::STATUS_SUCCESS,
+            'redemption_id' => $data['redemption_id'] ?? null,
             'RewardMode' => $data['RewardMode'] ?? null,
             'PlanType' => $data['PlanType'] ?? 0,
             'latitude' => $data['latitude'] ?? null,
@@ -436,6 +438,8 @@ class RewardService
             'reward_wallet_temp.RewardMode',
             'reward_wallet_temp.PlanType',
             'reward_wallet_temp.created_at',
+            'reward_wallet_temp.approved_at',
+            'reward_wallet_temp.is_store_approved',
             'redemption.order_amount',
 
             'payer.name as payer_name',
@@ -757,10 +761,16 @@ class RewardService
             ->with(['payer', 'payee'])
             ->get();
     }
-    public function getDRTranByReference(string $txnRef, $AgencyID)
+    public function getDRTranByReference(string $txnRef, int $AgencyID)
     {
         $latestEntry = RewardWallet::where('AgencyID', $AgencyID)->where('ReferenceNo', $txnRef)
             ->where('PlanType', 1)->where('type', 'DR')
+            ->where('status', 'SUCCESS')->first();
+        return $latestEntry ? $latestEntry->points : 0;
+    }
+    public function getCRTranByReference($user, string $txnRef, int $AgencyID)
+    {
+        $latestEntry = RewardWallet::where('AgencyID', $AgencyID)->where('customer_id', $user->id)->where('ReferenceNo', $txnRef)->where('type', 'CR')
             ->where('status', 'SUCCESS')->first();
         return $latestEntry ? $latestEntry->points : 0;
     }
@@ -803,10 +813,13 @@ class RewardService
             ->leftJoin('users as payer', 'payer.id', '=', 'reward_wallet_temp.payer_id')
             ->leftJoin('users as payee', 'payee.id', '=', 'reward_wallet_temp.payee_id')
             ->leftJoin('redemption', 'redemption.redemption_id', '=', 'reward_wallet_temp.redemption_id')
-            ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
+            // ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
             ->orderBy('reward_wallet_temp.id', 'desc')
             ->where(
                 function ($query) use ($validated) {
+                    if (isset($validated['status']) && !empty($validated['status'])) {
+                        return $query->where('reward_wallet_temp.status', $validated['status']);
+                    }
                     if (isset($validated['store_id']) && $validated['store_id'] > 0) {
                         return $query->where('redemption.stores_id', $validated['store_id']);
                     }

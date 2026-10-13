@@ -853,7 +853,7 @@ class LoyaltyController extends Controller
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
             $BalanceTemp = $this->rewardService->getCustomerNetBalanceTemp($request->user()->id, $AgencyID, $referneceNo);
-            $Balance = $this->rewardService->getCustomerNetBalance($request->user()->id, $AgencyID, $referneceNo);
+            $Balance = $this->rewardService->getCRTranByReference($request->user(), $referneceNo, $AgencyID);
 
             if ($ReddemPass || $checkUserCardExist) {
                 return response()->json([
