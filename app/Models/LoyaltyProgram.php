@@ -17,6 +17,8 @@ class LoyaltyProgram extends Model
         'invitation_required' => 'boolean',
         'membership_amount' => 'decimal:2',
         'welcome_coin' => 'integer',
+        'referral_coin' => 'integer',
+        'max_referral_account' => 'integer', //single customer can refer and earn upto how much users
     ];
 
 	public static function getMembershipList($perPage, $post = array())
