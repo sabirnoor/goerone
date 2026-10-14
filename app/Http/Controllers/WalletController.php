@@ -16,10 +16,13 @@ use Illuminate\Support\Facades\Storage;
 class WalletController extends Controller
 {
     private $rewardService;
+    public $APP_URL;
+
     public function __construct(
         RewardService $rewardService,
     ) {
         $this->rewardService = $rewardService;
+        $this->APP_URL = env('APP_URL');
     }
 
     public function getRewardSummary(Request $request)
@@ -433,7 +436,7 @@ class WalletController extends Controller
     public function TempRewardProcessed(Request $request)
     {
         $user = $request->user();
-
+        $existingBill = RewardWalletTemp::where('id', $request->ledger_id)->value('uploaded_bill');
         $validator = Validator::make($request->all(), [
             'ledger_id' => [
                 'required',
@@ -443,7 +446,14 @@ class WalletController extends Controller
                     $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
                     return $query->where('AgencyID', $AgencyID);
                 }),
-            ]
+            ],
+            'uploaded_bill' => [
+                Rule::requiredIf(fn () => (int) $request->is_rejected !== 1 && empty($existingBill)),
+                'nullable',
+                'file',
+                'mimes:png,jpg,jpeg,pdf',
+                'max:10240', // 10 MB (KB)
+            ],
         ]);
         if ($validator->fails()) {
             $errors = json_encode($validator->messages());
@@ -465,6 +475,7 @@ class WalletController extends Controller
             ]);
         }
 
+        $billUrl = null;
         try {
             $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
@@ -475,11 +486,25 @@ class WalletController extends Controller
             $validated['status'] = 'PENDING';
             $authUser = $request->user();
 
+            
             if ($authUser instanceof Store) {
                 $validated['store_id'] = $request->user()->id ?? 0;
             }
+            
+            $storeId = ($authUser instanceof Store) ? $authUser->id : $AgencyID;
 
-            return DB::transaction(function () use ($validated, $request) {
+            if ($request->hasFile('uploaded_bill') && (int) ($request->is_rejected ?? 0) !== 1) {
+            $uploadDir = public_path('uploads/store_bill/' . $storeId);
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+            $file = $request->file('uploaded_bill');
+            $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+            $file->move($uploadDir, $fileName);
+            $billUrl = $this->APP_URL . '/uploads/store_bill/' . $storeId . '/' . $fileName;
+            }
+
+            return DB::transaction(function () use ($validated, $request,$billUrl) {
                 $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
                 $RewardWalletTemp = $this->rewardService->getTempRewardDetails($validated['customer_id'] ?? null, $validated['AgencyID'], $validated);
                 $is_rejected = $request->is_rejected ?? 0;
@@ -496,6 +521,7 @@ class WalletController extends Controller
                         'redemption_id' => $RewardWalletTemp->redemption_id,
                         'ReferenceNo' => $RewardWalletTemp->ReferenceNo,
                         'description' => $RewardWalletTemp->description,
+                        'uploaded_bill' => $billUrl ?? $RewardWalletTemp->uploaded_bill,
                     ];
                     if ($is_rejected == 1) {
                         $result = null;
@@ -511,6 +537,7 @@ class WalletController extends Controller
                         $payload['approved_by'] = $request->user()->id;
                         $payload['approved_at']   = now();
                         $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
+                        $payload['uploaded_bill']     = $billUrl ?? $RewardWalletTemp->uploaded_bill;
                         RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
                     }
 
@@ -534,6 +561,12 @@ class WalletController extends Controller
                 }
             });
         } catch (\Throwable $th) {
+            if ($billUrl) {
+            $rel = str_replace(rtrim($this->APP_URL, '/') . '/', '', $billUrl);
+            if (str_starts_with($rel, 'uploads/store_bill/') && file_exists(public_path($rel))) {
+                @unlink(public_path($rel));
+            }
+            }
             return [
                 'status' => [
                     'success' => false,
