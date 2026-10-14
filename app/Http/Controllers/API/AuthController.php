@@ -928,11 +928,12 @@ class AuthController extends Controller
                 $keyword = (isset($request->keyword) && !empty($request->keyword)) ? $request->keyword : '';
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
+
                 $result = User::select('users.*', 'users.name as agencyName')->where(function ($query) use ($user) {
                     if ($user->UserType == 1) {
                         $query->where('AgencyID', $user->id);
                     } else {
-                        $query->where('UserSysId', $user->id);
+                        $query->where('AgencyID', $user->AgencyID);
                     }
                 })->where(function ($query) {  // This ensures both conditions are grouped
                     $query->where('UserType', 0)
