@@ -210,6 +210,7 @@ class LoyaltyController extends Controller
                         'user_id' => $user->id,
                         'card_id' => $card_id,
                         'points_balance' => 0,
+                        'ref' => $request->ref ?? null,
                         'status' => 'active',
                         'card_number' => $MasterCardNo,
                         // 'card_number' => $MasterCardNo . $card_number['card_no'],
@@ -844,38 +845,40 @@ class LoyaltyController extends Controller
         }
 
         try {
+            $referneceNo = $request->referneceNo ?? null;
             $checkUserCardExist = LoyaltyUserCard::with('usercard')->select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
-                ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.ref', $referneceNo)->where('user_card.user_id', $request->user()->id)
                 ->where('user_card.status', 'active')->first();
 
-            $referneceNo = $request->referneceNo ?? null;
+
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
             $BalanceTemp = $this->rewardService->getCustomerNetBalanceTemp($request->user()->id, $AgencyID, $referneceNo);
             $Balance = $this->rewardService->getCRTranByReference($request->user(), $referneceNo, $AgencyID);
-
-            if ($ReddemPass || $checkUserCardExist) {
-                return response()->json([
-                    'status' => [
-                        'success' => true,
-                        'httpStatus' => 200,
-                    ],
-                    'message' => 'Success',
-                    'cashback_status' => ($BalanceTemp > 0) ? false : true,
-                    'cashback' => ($BalanceTemp > 0) ? $BalanceTemp : $Balance,
-                    'data' => $ReddemPass,
-                    'UserCard' => $checkUserCardExist,
-                ]);
-            } else {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 400,
-                    ],
-                    'message' => 'No data found',
-                ]);
-            }
+            $walletTransactions = WalletModel::from('wallet as w')->where('w.AgencyID', $AgencyID)
+                ->where('w.customer_id', $user->id)
+                ->where('w.RefrenceNo', $referneceNo)
+                ->where('w.PType', 'DR')
+                ->whereNull('w.CreditSystemID')
+                ->where('w.IsCreditPayment', false)
+                ->where('w.is_profit', false)
+                ->first();
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => 'Success',
+                'cashback_status' => ($BalanceTemp > 0) ? false : true,
+                'cashback' => ($BalanceTemp > 0) ? $BalanceTemp : $Balance,
+                'data' => $ReddemPass,
+                'transactions' => $walletTransactions,
+                'payment' => empty($walletTransactions) ? false : true,
+                'rdm' => empty($ReddemPass) ? false : true,
+                'mep' => empty($checkUserCardExist) ? false : true,
+                'UserCard' => $checkUserCardExist,
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => [
