@@ -124,6 +124,7 @@ class MembershipController extends Controller
                     'welcome_coin' => 'nullable|integer|min:0',
                     'referral_coin' => 'nullable|integer|min:0',
                     'max_referral_account' => 'nullable|integer|min:1',
+                    'referral_earn_type' => 'required|integer|in:1,2',
                     'max_coin_usage_percent' => 'required|integer|between:0,100',
                     'membership_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                 ]);
@@ -178,6 +179,7 @@ class MembershipController extends Controller
                     'invitation_required' => $request->boolean('invitation_required'),
                     'welcome_coin' => $request->filled('welcome_coin') ? (int) $request->welcome_coin : null,
                     'referral_coin' => $request->filled('referral_coin') ? (int) $request->referral_coin : null,
+                    'referral_earn_type' => (int) $request->referral_earn_type,
                     'max_referral_account' => $request->filled('max_referral_account') ? (int) $request->max_referral_account : null,
                     'max_coin_usage_percent' => (int) $request->max_coin_usage_percent,
                     ];
