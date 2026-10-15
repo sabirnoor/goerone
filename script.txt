@@ -98,3 +98,7 @@ ADD COLUMN `uploaded_bill` VARCHAR(500) NULL AFTER `description`;
 
 ALTER TABLE `reward_wallet`
 ADD COLUMN `uploaded_bill` VARCHAR(500) NULL AFTER `description`;
+
+ALTER TABLE `loyalty_program`
+ADD COLUMN `max_coin_usage_percent` TINYINT UNSIGNED NOT NULL DEFAULT 100
+AFTER `max_referral_account`;

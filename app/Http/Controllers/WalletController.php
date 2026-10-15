@@ -486,7 +486,7 @@ class WalletController extends Controller
                 'nullable',
                 'file',
                 'mimes:png,jpg,jpeg,pdf',
-                'max:10240', // 10 MB (KB)
+                'max:2048', // 2 MB (KB)
             ],
         ]);
         if ($validator->fails()) {

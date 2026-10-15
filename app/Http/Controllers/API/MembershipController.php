@@ -124,6 +124,7 @@ class MembershipController extends Controller
                     'welcome_coin' => 'nullable|integer|min:0',
                     'referral_coin' => 'nullable|integer|min:0',
                     'max_referral_account' => 'nullable|integer|min:1',
+                    'max_coin_usage_percent' => 'required|integer|between:0,100',
                     'membership_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                 ]);
 
@@ -178,7 +179,8 @@ class MembershipController extends Controller
                     'welcome_coin' => $request->filled('welcome_coin') ? (int) $request->welcome_coin : null,
                     'referral_coin' => $request->filled('referral_coin') ? (int) $request->referral_coin : null,
                     'max_referral_account' => $request->filled('max_referral_account') ? (int) $request->max_referral_account : null,
-                ];
+                    'max_coin_usage_percent' => (int) $request->max_coin_usage_percent,
+                    ];
 
                 // Only touch membership_logo when a new file is uploaded or an explicit
                 // removal was requested — otherwise editing a membership leaves the logo alone.

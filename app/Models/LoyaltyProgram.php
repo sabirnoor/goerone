@@ -19,6 +19,7 @@ class LoyaltyProgram extends Model
         'welcome_coin' => 'integer',
         'referral_coin' => 'integer',
         'max_referral_account' => 'integer', //single customer can refer and earn upto how much users
+        'max_coin_usage_percent' => 'integer', // max % of a transaction payable with coins (0-100)
     ];
 
 	public static function getMembershipList($perPage, $post = array())
