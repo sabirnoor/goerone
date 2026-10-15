@@ -34,6 +34,7 @@ class RewardWalletTemp extends Model
         'longitude',
         'device_id',
         'ip_address',
+        'uploaded_bill'
     ];
 
     protected $casts = [

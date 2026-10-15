@@ -129,6 +129,7 @@ class RewardService
             'longitude' => $data['longitude'] ?? null,
             'device_id' => $data['device_id'] ?? null,
             'ip_address' => $data['ip_address'] ?? request()->ip(),
+            'uploaded_bill' => $data['uploaded_bill'] ?? null,
         ]);
     }
     public function addPointsTemp(array $data): RewardWalletTemp
@@ -265,6 +266,7 @@ class RewardService
             'reward_wallet.RewardMode',
             'reward_wallet.PlanType',
             'reward_wallet.created_at',
+            'reward_wallet.uploaded_bill',
 
             'payer.name as payer_name',
             'payer.email as payer_email',
@@ -440,6 +442,7 @@ class RewardService
             'reward_wallet_temp.created_at',
             'reward_wallet_temp.approved_at',
             'reward_wallet_temp.is_store_approved',
+            'reward_wallet_temp.uploaded_bill',
             'redemption.order_amount',
 
             'payer.name as payer_name',
