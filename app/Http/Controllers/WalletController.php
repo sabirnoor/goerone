@@ -21,7 +21,41 @@ class WalletController extends Controller
     ) {
         $this->rewardService = $rewardService;
     }
+    public function getWalletHistory(Request $request)
+    {
+        $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
+        $filterData = (isset($request->filterData)) ? $request->filterData : [];
+        $mode = $request->mode ?? '';
+        if ($mode != 'web') {
+            $validator = Validator::make($request->all(), [
+                'customer_id' => 'required|integer|exists:users,id'
+            ]);
+            if ($validator->fails()) {
+                $errors = json_encode($validator->messages());
+                $errorArray = [];
+                if (json_decode($errors, 1)) {
+                    foreach (json_decode($errors, 1) as $err) {
+                        foreach ($err as $errs) {
+                            $errorArray[] = ($errs);
+                        }
+                    }
+                }
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 422,
+                    ],
+                    'message' => implode(',', $errorArray),
+                    'error' => $validator->messages(),
+                    'mode' => $request->mode,
+                ]);
+            }
+        }
+        // return response()->json($request->user());
 
+        $transactions = WalletModel::WalletHistory($request->user(), $request->customer_id, $perPage, $filterData);
+        return response()->json($transactions);
+    }
     public function getRewardSummary(Request $request)
     {
         $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;

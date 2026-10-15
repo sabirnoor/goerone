@@ -131,7 +131,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
-
+    Route::post('wallet/history', [WalletController::class, 'getWalletHistory']);
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
     Route::post('/pan-verify', [PanController::class, 'panverify']);
 });

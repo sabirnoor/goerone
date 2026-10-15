@@ -815,7 +815,7 @@ class WalletModel extends Model
 
 		// pr($BNPLCreditStatus);
 		// Calculate combined balance
-		$combinedBalance = ($currentWalletBalance > 0) ? $currentWalletBalance:0;
+		$combinedBalance = ($currentWalletBalance > 0) ? $currentWalletBalance : 0;
 		// $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $customer_id]);
 		$RewardEarningTemp = RewardEarnTemp::TotalRewardEarning($user, ['user_id' => $customer_id]);
 		$reward = new RewardService();
