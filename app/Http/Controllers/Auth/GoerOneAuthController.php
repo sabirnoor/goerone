@@ -124,7 +124,7 @@ class GoerOneAuthController extends Controller
         $subject = 'OTP for User Account Verification';
         $ipAddress = $request->ip();
         $body = view('emails.otp_send', $data)->render();
-
+        $referralCode = Str::upper(Str::random(8));
         // Direct GoerOne test login
         if (
             $request->test_login &&
@@ -153,6 +153,14 @@ class GoerOneAuthController extends Controller
                     'status' => false,
                     'message' => 'Customer account is inactive.'
                 ], 401);
+            }
+            if (empty($testUser->details->referral_code)) {
+                incorporation_details::where('UserSysId', $testUser->id)->update(['referral_code' => $referralCode]);
+                $testUser = User::with('UserMembership.usercard')->where('id', $request->customer_id)
+                    ->where('AgencyID', $AgencyID)
+                    ->whereIn('UserType', [0, 2])
+                    // ->where('GoerOne', 1)
+                    ->first();
             }
 
             $accessToken = $testUser
@@ -316,6 +324,7 @@ class GoerOneAuthController extends Controller
             'otp' => 'required|digits:6',
             'UserSysId' => 'nullable',
         ]);
+        $referralCode = Str::upper(Str::random(8));
         if ($validator->fails()) {
             $errors = json_encode($validator->messages());
             $errorArray = [];
@@ -352,6 +361,17 @@ class GoerOneAuthController extends Controller
                 $request->mobile,
                 $request->otp
             );
+            if (empty($checkuser->details->referral_code)) {
+                incorporation_details::where('UserSysId', $checkuser->id)->update(['referral_code' => $referralCode]);
+                $checkuser = User::with('UserMembership.usercard')->where('AgencyID', $AgencyID)->where('mobile', $request->mobile)->where(function ($query) {
+                    $query->where('UserType', 2)
+                        ->orWhere('UserType', 0);
+                })->where(function ($query) use ($UserSysId) {
+                    if (!empty($UserSysId) && $UserSysId > 0) {
+                        $query->where('id', $UserSysId);
+                    }
+                })->first();
+            }
             $token = $checkuser->createToken('auth_token')->plainTextToken;
             if ($verified && $request->GoerOne) {
                 return response()->json([

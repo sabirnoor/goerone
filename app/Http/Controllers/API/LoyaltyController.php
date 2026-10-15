@@ -122,7 +122,7 @@ class LoyaltyController extends Controller
             $membershipId = $request->membershipId ?? 0;
             $mep = $request->mep ?? 0;
 
-            $checkUserCardExist = LoyaltyUserCard::select('user_card.*', 'loyalty_card.program_id')
+            $checkUserCardExist = LoyaltyUserCard::with('program')->select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                 ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
                 ->where('user_card.status', 'active')->whereDate('user_card.deactivation_date', '>=', today())
@@ -367,6 +367,7 @@ class LoyaltyController extends Controller
                     $card_id = $checkUserCardExist->card_id;
                 }
             }
+
             $referneceNo = $request->ref ?? null;
 
             if (empty($request->storeToken) && !empty($request->store_id)) {
@@ -582,12 +583,23 @@ class LoyaltyController extends Controller
                             'message' => 'Redemption already processed.'
                         ]);
                     }
+                    $UserCard = LoyaltyUserCard::with('program')->select('user_card.*', 'loyalty_card.program_id')
+                        ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                        ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $request->user()->id)
+                        ->where('user_card.status', 'active')->whereDate('user_card.deactivation_date', '>=', today())
+                        ->when($mep == 1, function ($query) use ($membershipId) {
+                            $query->where('loyalty_card.program_id', $membershipId);
+                        })->first();
+                    $max_coin_usage_percent = ($UserCard->program->max_coin_usage_percent ?? 0);
+
                     if ($usereward == 1) {
                         $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
                         $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
                         if ($points_to_redeem > $BookingAmount) {
                             $points_to_redeem = $BookingAmount;
                         }
+                        $points_to_redeem = (($points_to_redeem * (float)$max_coin_usage_percent) / 100);
+
                         $RewardRequest = [
                             "points" => ($points_to_redeem),
                             "description" => 'Used on Loyalty Redeem',

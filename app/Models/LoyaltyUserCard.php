@@ -24,6 +24,10 @@ class LoyaltyUserCard extends Model
     {
         return $this->belongsTo(LoyaltyCard::class, 'card_id', 'card_id')->with('LoyaltyProgram');
     }
+    public function program()
+    {
+        return $this->belongsTo(LoyaltyProgram::class, 'program_id', 'program_id');
+    }
     public static function getloyaltyUserCard($User, $perPage, $post = array())
     {
         $responsedata = LoyaltyUserCard::select(
