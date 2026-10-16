@@ -109,3 +109,7 @@ AFTER `referral_coin`;
 
 ALTER TABLE `vouchers`
 ADD COLUMN `created_by_store` BIGINT UNSIGNED NULL DEFAULT NULL AFTER `store_id`;
+
+ALTER TABLE stores_mapping
+ADD COLUMN created_by_store BIGINT NULL DEFAULT NULL,
+ADD COLUMN updated_by_store BIGINT NULL DEFAULT NULL;

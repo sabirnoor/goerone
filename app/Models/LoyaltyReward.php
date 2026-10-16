@@ -78,7 +78,15 @@ class LoyaltyReward extends Model
                 if ($User->UserType == 1) {
                     $query->where('reward.AgencyID', $User->id);
                 } else {
-                    $query->where('reward.UserSysId', $User->id);
+                    // $query->where('reward.UserSysId', $User->id);
+                    $query->where('reward.UserSysId', $User->id)
+                ->orWhereExists(function ($subQuery) use ($User) {
+                    $subQuery->select(DB::raw(1))
+                        ->from('stores_mapping as sm')
+                        ->whereColumn('sm.reward_id', 'reward.reward_id')
+                        ->where('sm.stores_id', $User->id)
+                        ->where('sm.isdelete', 0);
+                });
                 }
             })
             ->where('reward.parent_id', 0)

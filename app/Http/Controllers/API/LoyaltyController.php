@@ -1492,7 +1492,12 @@ class LoyaltyController extends Controller
                         ]);
                     }
 
-                    $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+                    $isStoreUser = !isset($user->UserType);
+                    $AgencyID = isset($user->UserType) && $user->UserType == 1 ? $user->id : $user->AgencyID;
+                    $UserSysId = $isStoreUser ? $user->AgencyID : $user->id;
+                    $storeId = $isStoreUser ? $user->id : null;
+
+                    // $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
                     $reward_id = (isset($request->reward_id) && $request->reward_id > 0) ? $request->reward_id : 0;
                     $parent_id = (isset($request->parent_id) && $request->parent_id > 0) ? $request->parent_id : 0;
                     if ($request->program_id && explode(',', $request->program_id)) {
@@ -1502,7 +1507,7 @@ class LoyaltyController extends Controller
 
                             $CreateData = [
                                 'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
-                                'UserSysId' => $request->user()->id,
+                                'UserSysId' => $UserSysId,
                                 'program_id' => $value, //$request->program_id,
                                 // 'stores_id' => $request->stores_id,
                                 'is_active' => $request->is_active,
@@ -1571,29 +1576,94 @@ class LoyaltyController extends Controller
                                 }
                             }
 
-                            if ($user && $insertGetId) {
-                                if ($request->stores_id) {
+                            // if ($user && $insertGetId) {
+                            //     if ($request->stores_id) {
 
-                                    $MappingUpdate['isdelete'] = 1;
-                                    $MappingUpdate['updated_at'] = date('Y-m-d H:i:s');
-                                    StoresMapping::where('reward_id', $insertGetId)->where('AgencyID', $AgencyID)->update($MappingUpdate);
-                                    $stores_ids = json_decode($request->stores_id, 1);
+                            //         $MappingUpdate['isdelete'] = 1;
+                            //         $MappingUpdate['updated_at'] = date('Y-m-d H:i:s');
+                            //         StoresMapping::where('reward_id', $insertGetId)->where('AgencyID', $AgencyID)->update($MappingUpdate);
+                            //         $stores_ids = json_decode($request->stores_id, 1);
+                            //         foreach ($stores_ids as $vl) {
+                            //             $Mapping = [
+                            //                 'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
+                            //                 'UserSysId' => $request->user()->id,
+                            //                 'stores_id' => $vl['id'],
+                            //                 'store_name' => $vl['store_name'],
+                            //                 'reward_id' => $insertGetId,
+                            //             ];
+
+                            //             $Mapping['created_at'] = date('Y-m-d H:i:s');
+                            //             $Mapping['updated_at'] = date('Y-m-d H:i:s');
+                            //             StoresMapping::insertGetId($Mapping);
+                            //         }
+                            //     }
+                            //     DB::commit();
+                            // }
+                            if ($user && $insertGetId) {
+                            if ($request->stores_id) {
+
+                                $stores_ids = json_decode($request->stores_id, true);
+
+                                if ($isStoreUser) {
+                                    // Store user: update only this store's existing mapping.
                                     foreach ($stores_ids as $vl) {
-                                        $Mapping = [
-                                            'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
-                                            'UserSysId' => $request->user()->id,
+                                        $mapping = StoresMapping::where(
+                                            'reward_id',
+                                            $insertGetId
+                                        )
+                                            ->where('AgencyID', $AgencyID)
+                                            ->where('stores_id', $user->id)
+                                            ->where('isdelete', 0)
+                                            ->first();
+
+                                        if ($mapping) {
+                                            $mapping->store_name = $vl['store_name'];
+                                            $mapping->updated_by_store = $user->id;
+                                            $mapping->updated_at = date('Y-m-d H:i:s');
+                                            $mapping->save();
+                                        } else {
+                                            // Create a mapping for this store if none exists.
+                                            StoresMapping::insert([
+                                                'AgencyID' => $AgencyID,
+                                                'UserSysId' => $AgencyID,
+                                                'stores_id' => $user->id,
+                                                'store_name' => $vl['store_name'],
+                                                'reward_id' => $insertGetId,
+                                                'created_by_store' => $user->id,
+                                                'created_at' => date('Y-m-d H:i:s'),
+                                                'updated_at' => date('Y-m-d H:i:s'),
+                                                'isdelete' => 0,
+                                            ]);
+                                        }
+                                    }
+                                } else {
+                                    // Existing agency/user behavior.
+                                    $MappingUpdate = [
+                                        'isdelete' => 1,
+                                        'updated_at' => date('Y-m-d H:i:s'),
+                                    ];
+
+                                    StoresMapping::where('reward_id', $insertGetId)
+                                        ->where('AgencyID', $AgencyID)
+                                        ->update($MappingUpdate);
+
+                                    foreach ($stores_ids as $vl) {
+                                        StoresMapping::insert([
+                                            'AgencyID' => $AgencyID,
+                                            'UserSysId' => $user->id,
                                             'stores_id' => $vl['id'],
                                             'store_name' => $vl['store_name'],
                                             'reward_id' => $insertGetId,
-                                        ];
-
-                                        $Mapping['created_at'] = date('Y-m-d H:i:s');
-                                        $Mapping['updated_at'] = date('Y-m-d H:i:s');
-                                        StoresMapping::insertGetId($Mapping);
+                                            'created_at' => date('Y-m-d H:i:s'),
+                                            'updated_at' => date('Y-m-d H:i:s'),
+                                        ]);
                                     }
                                 }
-                                DB::commit();
-                            } else {
+                            }
+
+                            DB::commit();
+                        }
+                             else {
                                 DB::rollback();
                                 return response()->json([
                                     'status' => [
