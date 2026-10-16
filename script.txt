@@ -106,3 +106,6 @@ AFTER `max_referral_account`;
 ALTER TABLE `loyalty_program`
 ADD COLUMN `referral_earn_type` TINYINT UNSIGNED NOT NULL DEFAULT 1
 AFTER `referral_coin`;
+
+ALTER TABLE `vouchers`
+ADD COLUMN `created_by_store` BIGINT UNSIGNED NULL DEFAULT NULL AFTER `store_id`;

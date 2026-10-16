@@ -23,6 +23,7 @@ class Vouchers extends Model
         'AgencyID',
         'UserSysId',
         'store_id',
+        'created_by_store',
         'no_of_voucher',
         'customer_type',
         'discount_type',
@@ -146,7 +147,10 @@ class Vouchers extends Model
                 if ($User->UserType == 1) {
                     $query->where('vouchers.AgencyID', $User->id);
                 } else {
-                    $query->where('vouchers.UserSysId', $User->id);
+                     $query->where(function ($q) use ($User) {
+                        $q->where('vouchers.UserSysId', $User->id)
+                        ->orWhere('vouchers.store_id', $User->id);
+                    });
                 }
             })
             ->orderBy('vouchers.id', 'DESC')

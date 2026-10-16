@@ -114,8 +114,15 @@ class VouchersController extends Controller
                 // ]);
                 DB::beginTransaction();
                 try {
-                    $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
-                    $UserSysId = $request->user()->id;
+                    // $AgencyID = ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID;
+                    // $UserSysId = $request->user()->id;
+                    $user = $request->user();
+                    $isAgency = isset($user->UserType) && $user->UserType == 1;
+
+                    $AgencyID = $isAgency  ? $user->id : $user->AgencyID;
+                    $UserSysId = $isAgency ? $user->id : $user->AgencyID;
+                    $createdByStore = $isAgency ? null  : $user->id;
+
                     if ($request->stores_id) {
                         $voucher_id = isset($request->id) ? $request->id : 0;
                         $stores_ids = json_decode($request->stores_id, 1);
@@ -132,7 +139,7 @@ class VouchersController extends Controller
                                     'customer_share' => $request->customer_share,
                                     'owner_share' => $request->owner_share,
                                     'AgencyID' => $AgencyID,
-                                    'UserSysId' => $UserSysId,
+                                    // 'UserSysId' => $UserSysId,
                                     'no_of_voucher' => $request->no_of_voucher,
                                     'discount_value' => $request->discount_value,
                                     'discount_type' => $request->discount_type,
@@ -148,10 +155,16 @@ class VouchersController extends Controller
                                 ];
 
                                 if (!$exists && $voucher_id == 0) {
+                                    // Set UserSysId only when creating a new voucher
+                                    $dataSet['UserSysId'] = $UserSysId;
+                                    $dataSet['created_by_store'] = $createdByStore;
+                                    
                                     $Entry = Vouchers::create($dataSet);
                                     $this->syncMemberships($Entry->id, $membershipIds);
                                 } elseif ($voucher_id > 0) {
-                                    $row = Vouchers::where('id', $voucher_id)->where('AgencyID', $AgencyID)->where('store_id', $vl['id'])->first();
+                                    $row = Vouchers::where('id', $voucher_id)->where('AgencyID', $AgencyID)->where('store_id', $vl['id'])->where(function ($q) use ($UserSysId) {
+                                        $q->where('UserSysId', $UserSysId)
+                                        ->orWhere('store_id', $UserSysId);})->first();
                                     if ($row) {
                                         $row->update($dataSet);
                                         $this->syncMemberships($row->id, $membershipIds);

@@ -101,11 +101,14 @@ class StoreController extends Controller
                     ->leftjoin('mst_country', 'stores.country', '=', 'mst_country.id')
                     ->where(function ($query) use ($user) {
                         if ($user->UserType == 1) {
-                            $query->where('AgencyID', $user->id);
+                            $query->where('stores.AgencyID', $user->id);
                         } else {
-                            $query->where('UserSysId', $user->id);
+                            $query->where(function ($q) use ($user) {
+                                $q->where('stores.UserSysId', $user->id)
+                                ->orWhere('stores.id', $user->id);
+                            });
                         }
-                    })->where(function ($query) use ($keyword) {
+                        })->where(function ($query) use ($keyword) {
                         if ($keyword !== "null" && !empty(trim($keyword))) {
                             $query->where('stores.store_name', "like", "%" . $keyword . "%");
                             $query->orWhere('stores.address', "like", "%" . $keyword . "%");
