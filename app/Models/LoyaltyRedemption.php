@@ -325,4 +325,76 @@ class LoyaltyRedemption extends Model
         // pr($responsedata);die;
         return $responsedata;
     }
+
+
+    public static function StoreRedeemLedger($User, $perPage, $post = array())
+    {
+        $applyFilters = function ($query) use ($User, $post) {
+            $query->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
+                ->where(function ($q) use ($User) {
+                    if ($User->UserType == 1) {
+                        $q->where('redemption.AgencyID', $User->id);
+                    } else {
+                        $q->where('redemption.UserSysId', $User->id);
+                    }
+                });
+
+            if (!empty($post['stores_id']) && $post['stores_id'] > 0) {
+                $query->where('redemption.stores_id', $post['stores_id']);
+            }
+
+            return $query;
+        };
+
+        $sumColumns = [
+            DB::raw('ROUND(SUM(redemption.discountOwner), 2) as total_discountOwner'),
+            DB::raw('ROUND(SUM(redemption.discountCust), 2) as total_discountCust'),
+            DB::raw('ROUND(SUM(redemption.order_amount), 2) as total_order_amount'),
+            DB::raw('ROUND(SUM(redemption.discount), 2) as total_discount'),
+        ];
+
+        $storeColumns = [
+            'stores.store_name',
+            'stores.address',
+            'stores.phone',
+            'stores.contact_name',
+            'stores.email',
+        ];
+
+        if (!empty($post['stores_id']) && $post['stores_id'] > 0) {
+            // 1) All redemptions of the single store (no groupBy)
+            $redemptions = $applyFilters(
+                LoyaltyRedemption::select(array_merge(['redemption.*'], $storeColumns))
+            )->orderBy('redemption.redemption_date', 'DESC')
+                ->paginate($perPage);
+
+            // 2) Sums in a separate variable (over ALL rows, not just the current page)
+            $totals = $applyFilters(LoyaltyRedemption::select($sumColumns))->first();
+
+            $responsedata = [
+                'redemptions' => $redemptions,
+                'totals'      => [
+                    'total_discountOwner' => $totals->total_discountOwner ?? 0,
+                    'total_discountCust'  => $totals->total_discountCust ?? 0,
+                    'total_order_amount'  => $totals->total_order_amount ?? 0,
+                    'total_discount'      => $totals->total_discount ?? 0,
+                ],
+            ];
+        } else {
+            // All stores: keep grouped summary per store
+            $responsedata = $applyFilters(
+                LoyaltyRedemption::select(array_merge(['redemption.stores_id'], $storeColumns, $sumColumns))
+            )->groupBy(
+                'redemption.stores_id',
+                'stores.store_name',
+                'stores.address',
+                'stores.phone',
+                'stores.contact_name',
+                'stores.email'
+            )
+                ->orderBy(DB::raw('MAX(redemption.redemption_date)'), 'DESC')
+                ->paginate($perPage);
+        }
+        return $responsedata;
+    }
 }

@@ -60,6 +60,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('redeem-details', [LoyaltyController::class, 'redeemRewardDetails']);
         Route::post('redemptionhistory', [LoyaltyController::class, 'getRedemptionHistoryAll']);
         Route::post('redemptionreport', [LoyaltyController::class, 'getRedemptionReport']);
+        Route::post('storeredemptionledger', [LoyaltyController::class, 'getStoreRedemption']);
         Route::post('redemptionreportcustomer', [LoyaltyController::class, 'getRedemptionReportCustomer']);
         Route::post('redemptionreportreward', [LoyaltyController::class, 'getRedemptionReportReward']);
         Route::post('earningbycustomer', [EarningController::class, 'earningbycustomer']);

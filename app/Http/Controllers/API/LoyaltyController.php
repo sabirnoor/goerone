@@ -1600,70 +1600,69 @@ class LoyaltyController extends Controller
                             //     DB::commit();
                             // }
                             if ($user && $insertGetId) {
-                            if ($request->stores_id) {
+                                if ($request->stores_id) {
 
-                                $stores_ids = json_decode($request->stores_id, true);
+                                    $stores_ids = json_decode($request->stores_id, true);
 
-                                if ($isStoreUser) {
-                                    // Store user: update only this store's existing mapping.
-                                    foreach ($stores_ids as $vl) {
-                                        $mapping = StoresMapping::where(
-                                            'reward_id',
-                                            $insertGetId
-                                        )
+                                    if ($isStoreUser) {
+                                        // Store user: update only this store's existing mapping.
+                                        foreach ($stores_ids as $vl) {
+                                            $mapping = StoresMapping::where(
+                                                'reward_id',
+                                                $insertGetId
+                                            )
+                                                ->where('AgencyID', $AgencyID)
+                                                ->where('stores_id', $user->id)
+                                                ->where('isdelete', 0)
+                                                ->first();
+
+                                            if ($mapping) {
+                                                $mapping->store_name = $vl['store_name'];
+                                                $mapping->updated_by_store = $user->id;
+                                                $mapping->updated_at = date('Y-m-d H:i:s');
+                                                $mapping->save();
+                                            } else {
+                                                // Create a mapping for this store if none exists.
+                                                StoresMapping::insert([
+                                                    'AgencyID' => $AgencyID,
+                                                    'UserSysId' => $AgencyID,
+                                                    'stores_id' => $user->id,
+                                                    'store_name' => $vl['store_name'],
+                                                    'reward_id' => $insertGetId,
+                                                    'created_by_store' => $user->id,
+                                                    'created_at' => date('Y-m-d H:i:s'),
+                                                    'updated_at' => date('Y-m-d H:i:s'),
+                                                    'isdelete' => 0,
+                                                ]);
+                                            }
+                                        }
+                                    } else {
+                                        // Existing agency/user behavior.
+                                        $MappingUpdate = [
+                                            'isdelete' => 1,
+                                            'updated_at' => date('Y-m-d H:i:s'),
+                                        ];
+
+                                        StoresMapping::where('reward_id', $insertGetId)
                                             ->where('AgencyID', $AgencyID)
-                                            ->where('stores_id', $user->id)
-                                            ->where('isdelete', 0)
-                                            ->first();
+                                            ->update($MappingUpdate);
 
-                                        if ($mapping) {
-                                            $mapping->store_name = $vl['store_name'];
-                                            $mapping->updated_by_store = $user->id;
-                                            $mapping->updated_at = date('Y-m-d H:i:s');
-                                            $mapping->save();
-                                        } else {
-                                            // Create a mapping for this store if none exists.
+                                        foreach ($stores_ids as $vl) {
                                             StoresMapping::insert([
                                                 'AgencyID' => $AgencyID,
-                                                'UserSysId' => $AgencyID,
-                                                'stores_id' => $user->id,
+                                                'UserSysId' => $user->id,
+                                                'stores_id' => $vl['id'],
                                                 'store_name' => $vl['store_name'],
                                                 'reward_id' => $insertGetId,
-                                                'created_by_store' => $user->id,
                                                 'created_at' => date('Y-m-d H:i:s'),
                                                 'updated_at' => date('Y-m-d H:i:s'),
-                                                'isdelete' => 0,
                                             ]);
                                         }
                                     }
-                                } else {
-                                    // Existing agency/user behavior.
-                                    $MappingUpdate = [
-                                        'isdelete' => 1,
-                                        'updated_at' => date('Y-m-d H:i:s'),
-                                    ];
-
-                                    StoresMapping::where('reward_id', $insertGetId)
-                                        ->where('AgencyID', $AgencyID)
-                                        ->update($MappingUpdate);
-
-                                    foreach ($stores_ids as $vl) {
-                                        StoresMapping::insert([
-                                            'AgencyID' => $AgencyID,
-                                            'UserSysId' => $user->id,
-                                            'stores_id' => $vl['id'],
-                                            'store_name' => $vl['store_name'],
-                                            'reward_id' => $insertGetId,
-                                            'created_at' => date('Y-m-d H:i:s'),
-                                            'updated_at' => date('Y-m-d H:i:s'),
-                                        ]);
-                                    }
                                 }
-                            }
 
-                            DB::commit();
-                        }
-                             else {
+                                DB::commit();
+                            } else {
                                 DB::rollback();
                                 return response()->json([
                                     'status' => [
@@ -2081,7 +2080,73 @@ class LoyaltyController extends Controller
         }
     }
 
+    public function getStoreRedemption(Request $request)
+    {
+        try {
 
+            if ($request->isMethod('post')) {
+                $validator = Validator::make($request->all(), [
+                    'storeToken' => 'required',
+                ], [
+                    'storeToken' => "Token can't be null.",
+                ]);
+                if ($validator->fails()) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 422,
+                        ],
+                        'message' => 'Validation failed',
+                        'error' => $validator->errors()
+                    ]);
+                }
+                $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
+                $user = $request->user();
+                $accessToken = PersonalAccessToken::findToken($request->storeToken);
+                if (!$accessToken) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 401,
+                        ],
+                        'message' => 'Unauthorized Store'
+                    ]);
+                }
+                $post['stores_id'] = $accessToken->tokenable_id;
+                $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+                $post['AgencyID'] = $AgencyID;
+
+                $result = LoyaltyRedemption::StoreRedeemLedger($user, $perPage, $post);
+
+                if ($user && $result) {
+                    return response()->json([
+                        'status' => [
+                            'success' => true,
+                            'httpStatus' => 200,
+                        ],
+                        'message' => 'Success',
+                        'data' => $result,
+                    ]);
+                } else {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 500,
+                        ],
+                        'message' => 'Oops something went wrong',
+                    ]);
+                }
+            }
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 500,
+                ],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
     public function customerReward(Request $request)
     {
         try {
