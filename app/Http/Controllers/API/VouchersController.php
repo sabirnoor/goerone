@@ -11,10 +11,12 @@ use App\Helpers\Helper;
 use App\Http\Resources\Voucher\CustomerVoucherResource;
 use App\Http\Resources\Voucher\VoucherOrderResource;
 use App\Models\CustomerVoucher;
+use App\Models\Store;
 use App\Models\VoucherOrder;
 use App\Models\Vouchers;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 
 class VouchersController extends Controller
 {
@@ -160,13 +162,14 @@ class VouchersController extends Controller
                                     // Set UserSysId only when creating a new voucher
                                     $dataSet['UserSysId'] = $UserSysId;
                                     $dataSet['created_by_store'] = $createdByStore;
-                                    
+
                                     $Entry = Vouchers::create($dataSet);
                                     $this->syncMemberships($Entry->id, $membershipIds);
                                 } elseif ($voucher_id > 0) {
                                     $row = Vouchers::where('id', $voucher_id)->where('AgencyID', $AgencyID)->where('store_id', $vl['id'])->where(function ($q) use ($UserSysId) {
                                         $q->where('UserSysId', $UserSysId)
-                                        ->orWhere('store_id', $UserSysId);})->first();
+                                            ->orWhere('store_id', $UserSysId);
+                                    })->first();
                                     if ($row) {
                                         $row->update($dataSet);
                                         $this->syncMemberships($row->id, $membershipIds);
@@ -325,5 +328,128 @@ class VouchersController extends Controller
             ->paginate($request->integer('per_page', 15));
 
         return CustomerVoucherResource::collection($vouchers)->additional(['status' => true]);
+    }
+
+
+    public function vouchervalidate(Request $request)
+    {
+        $post = $request->all();
+        $validator = Validator::make($request->all(), [
+            'store_id' => 'required|integer|exists:stores,id',
+            'voucher_code' => 'required',
+        ]);
+        if ($validator->fails()) {
+            $errors = json_encode($validator->messages());
+            $errorArray = [];
+            if (json_decode($errors, 1)) {
+                foreach (json_decode($errors, 1) as $err) {
+                    foreach ($err as $errs) {
+                        $errorArray[] = ($errs);
+                    }
+                }
+            }
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 201,
+                ],
+                'message' => implode(',', $errorArray),
+                'error' => $validator->messages(),
+            ]);
+        }
+        $authUser = $request->user();
+        if ($request->isMethod('post')) {
+            $status = 'active';
+            $store_id = $request->store_id ?? 0;
+            try {
+                $voucher = CustomerVoucher::select('customer_vouchers.*', 'vouchers.store_id as voucher_store_id')
+                    ->join('vouchers', 'customer_vouchers.voucher_id', '=', 'vouchers.id')
+                    ->when(function ($query) use ($authUser) {
+                        if ($authUser instanceof Store) {
+                            $query->where('vouchers.store_id', $authUser->id);
+                        } else {
+                            $query->where('customer_vouchers.customer_id', $authUser->id);
+                        }
+                    })
+                    // ->where('customer_vouchers.customer_id', $request->user()->id)
+                    ->where('customer_vouchers.voucher_code', $request->voucher_code)
+                    ->first();
+                // 1. Voucher code doesn't exist for this customer
+                if (!$voucher) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 404,
+                        ],
+                        'message' => 'Invalid voucher code.',
+                    ], 404);
+                }
+
+                // 2. Mandatory store check
+                if ((int) $voucher->voucher_store_id !== (int) $store_id) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 403,
+                        ],
+                        'message' => 'This voucher is not valid for this store.',
+                    ], 403);
+                }
+
+                // 3. Expired (marked expired, or still "active" but past valid_to)
+                $isExpired = $voucher->status === 'expired'
+                    || ($voucher->status === 'active'
+                        && $voucher->valid_to
+                        && Carbon::parse($voucher->valid_to)->lt(today()));
+
+                if ($isExpired) {
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 422,
+                        ],
+                        'message' => 'This voucher has expired.',
+                    ], 422);
+                }
+
+                // 4. Any other non-active state
+                if ($voucher->status !== 'active') {
+                    $message = match ($voucher->status) {
+                        'used'      => 'This voucher has already been used.',
+                        'cancelled' => 'This voucher has been cancelled.',
+                        default     => 'This voucher is inactive.',
+                    };
+
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 422,
+                        ],
+                        'message' => $message,
+                    ], 422);
+                }
+
+                // 5. Valid voucher
+                return response()->json([
+                    'status' => [
+                        'success' => true,
+                        'httpStatus' => 200,
+                    ],
+                    'message' => 'Voucher is valid.',
+                    'data'    => $voucher,
+                ]);
+            } catch (\Exception $e) {
+                return [
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 500,
+                    ],
+                    'message' => $e->getMessage(),
+                ];
+            }
+        } else {
+
+            die('Bad request');
+        }
     }
 }
