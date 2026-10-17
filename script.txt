@@ -113,3 +113,7 @@ ADD COLUMN `created_by_store` BIGINT UNSIGNED NULL DEFAULT NULL AFTER `store_id`
 ALTER TABLE stores_mapping
 ADD COLUMN created_by_store BIGINT NULL DEFAULT NULL,
 ADD COLUMN updated_by_store BIGINT NULL DEFAULT NULL;
+
+ALTER TABLE vouchers
+ADD COLUMN min_purchase_value DECIMAL(10,2) NULL
+AFTER max_discount_value;

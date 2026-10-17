@@ -54,6 +54,7 @@ class VouchersController extends Controller
                 'terms_condition' => 'required',
                 'voucher_price' => 'required|numeric',
                 'max_discount_value' => 'required|numeric',
+                'min_purchase_value' => 'required|numeric',
                 'redemption_type' => 'required|in:1,2,3', // 1 = online, 2 = offline, 3 = both
                 'customer_share' => 'required|numeric|min:0|max:100',
                 'owner_share' => 'required|numeric|min:0|max:100',
@@ -149,6 +150,7 @@ class VouchersController extends Controller
                                     'voucher_name' => $request->voucher_name ?? 0,
                                     'voucher_price' => $request->voucher_price ?? 0,
                                     'max_discount_value' => $request->max_discount_value ?? 0,
+                                    'min_purchase_value' => $request->min_purchase_value ?? 0,
                                     'terms_condition' => $request->terms_condition ?? 0,
                                     'valid_from' => (!empty($request->valid_from) && $request->valid_from != "null") ? $request->valid_from : null,
                                     'valid_to' => (!empty($request->valid_to) && $request->valid_from != "null") ? $request->valid_to : null,

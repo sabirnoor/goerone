@@ -38,12 +38,14 @@ class Vouchers extends Model
         'redemption_type',
         'customer_share',
         'owner_share',
+        'min_purchase_value'
     ];
 
     protected $casts = [
         'voucher_price' => 'decimal:2',
         'discount_value' => 'decimal:2',
         'max_discount_value' => 'decimal:2',
+        'min_purchase_value' => 'decimal:2',
         'required_value' => 'decimal:2',
         'customer_share' => 'decimal:2',
         'owner_share' => 'decimal:2',
@@ -129,6 +131,7 @@ class Vouchers extends Model
             'vouchers.discount_type',
             'vouchers.discount_value',
             'vouchers.max_discount_value',
+            'vouchers.min_purchase_value',
             'vouchers.gtcoin_required',
             'vouchers.required_value',
             'vouchers.valid_from',
@@ -181,6 +184,7 @@ class Vouchers extends Model
             'vouchers.discount_type',
             'vouchers.discount_value',
             'vouchers.max_discount_value',
+            'vouchers.min_purchase_value',
             'vouchers.gtcoin_required',
             'vouchers.required_value',
             'vouchers.valid_from',
@@ -224,6 +228,7 @@ class Vouchers extends Model
             'vouchers.discount_type',
             'vouchers.discount_value',
             'vouchers.max_discount_value',
+            'vouchers.min_purchase_value',
             'vouchers.gtcoin_required',
             'vouchers.required_value',
             'vouchers.valid_from',
