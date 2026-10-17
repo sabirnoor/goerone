@@ -358,22 +358,23 @@ class VouchersController extends Controller
             ]);
         }
         $authUser = $request->user();
+
         if ($request->isMethod('post')) {
             $status = 'active';
             $store_id = $request->store_id ?? 0;
             try {
                 $voucher = CustomerVoucher::select('customer_vouchers.*', 'vouchers.store_id as voucher_store_id')
                     ->join('vouchers', 'customer_vouchers.voucher_id', '=', 'vouchers.id')
-                    ->when(function ($query) use ($authUser) {
+                    ->when(function ($query) use ($authUser, $store_id) {
                         if ($authUser instanceof Store) {
-                            $query->where('vouchers.store_id', $authUser->id);
+                            return $query->where('vouchers.store_id', $authUser->id);
                         } else {
-                            $query->where('customer_vouchers.customer_id', $authUser->id);
+                            return $query->where('customer_vouchers.customer_id', $authUser->id)->where('vouchers.store_id', $store_id);
                         }
                     })
-                    // ->where('customer_vouchers.customer_id', $request->user()->id)
                     ->where('customer_vouchers.voucher_code', $request->voucher_code)
                     ->first();
+
                 // 1. Voucher code doesn't exist for this customer
                 if (!$voucher) {
                     return response()->json([

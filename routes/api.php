@@ -100,7 +100,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('voucher-cart/{voucherId}', [VoucherCartController::class, 'destroy'])->whereNumber('voucherId');
         Route::delete('voucher-cart', [VoucherCartController::class, 'clear']);
 
-
+        Route::post('voucher-checkout', [VoucherCheckoutController::class, 'checkout']);
         Route::post('voucher-purchase', [VoucherCheckoutController::class, 'purchase']);
         Route::get('voucher-orders', [VouchersController::class, 'orders']);
         Route::get('voucher-orders/{orderNo}', [VouchersController::class, 'order']);
