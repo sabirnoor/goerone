@@ -2085,36 +2085,11 @@ class LoyaltyController extends Controller
         try {
 
             if ($request->isMethod('post')) {
-                $validator = Validator::make($request->all(), [
-                    'storeToken' => 'required',
-                ], [
-                    'storeToken' => "Token can't be null.",
-                ]);
-                if ($validator->fails()) {
-                    return response()->json([
-                        'status' => [
-                            'success' => false,
-                            'httpStatus' => 422,
-                        ],
-                        'message' => 'Validation failed',
-                        'error' => $validator->errors()
-                    ]);
-                }
+
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
-                $accessToken = PersonalAccessToken::findToken($request->storeToken);
-                if (!$accessToken) {
-                    return response()->json([
-                        'status' => [
-                            'success' => false,
-                            'httpStatus' => 401,
-                        ],
-                        'message' => 'Unauthorized Store'
-                    ]);
-                }
-                $post['stores_id'] = $accessToken->tokenable_id;
-                $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
-                $post['AgencyID'] = $AgencyID;
+
+                $post = $request->all();
 
                 $result = LoyaltyRedemption::StoreRedeemLedger($user, $perPage, $post);
 

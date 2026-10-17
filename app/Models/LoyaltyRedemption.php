@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class LoyaltyRedemption extends Model
 {
@@ -330,19 +331,32 @@ class LoyaltyRedemption extends Model
     public static function StoreRedeemLedger($User, $perPage, $post = array())
     {
         $applyFilters = function ($query) use ($User, $post) {
-            $query->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')
+            $query->leftJoin('stores', 'stores.id', '=', 'redemption.stores_id')->leftJoin('users', 'users.id', '=', 'redemption.user_id')
                 ->where(function ($q) use ($User) {
-                    if ($User->UserType == 1) {
-                        $q->where('redemption.AgencyID', $User->id);
-                    } else {
-                        $q->where('redemption.UserSysId', $User->id);
-                    }
+                    $q->where('redemption.AgencyID', $User->AgencyID);
                 });
 
-            if (!empty($post['stores_id']) && $post['stores_id'] > 0) {
-                $query->where('redemption.stores_id', $post['stores_id']);
+            if (!empty($User->id) && $User->id > 0) {
+                $query->where('redemption.stores_id', $User->id);
+            }
+            if (!empty($post['customer_id']) && $post['customer_id'] > 0) {
+                $query->where('redemption.user_id', $post['customer_id']);
             }
 
+            // Reference number (partial match)
+            if (!empty($post['referneceNo'])) {
+                $query->where('redemption.referneceNo', 'like', '%' . trim($post['referneceNo']) . '%');
+            }
+
+            // Date range: the frontend sends UTC ISO strings, so convert to IST first
+            if (!empty($post['FromDate'])) {
+                $from = Carbon::parse($post['FromDate'])->timezone('Asia/Kolkata')->toDateString();
+                $query->whereDate('redemption.redemption_date', '>=', $from);
+            }
+            if (!empty($post['ToDate'])) {
+                $to = Carbon::parse($post['ToDate'])->timezone('Asia/Kolkata')->toDateString();
+                $query->whereDate('redemption.redemption_date', '<=', $to);
+            }
             return $query;
         };
 
@@ -359,9 +373,14 @@ class LoyaltyRedemption extends Model
             'stores.phone',
             'stores.contact_name',
             'stores.email',
+            'users.fname',
+            'users.lname',
+            'users.title',
+            'users.name',
+            'users.UserType',
         ];
 
-        if (!empty($post['stores_id']) && $post['stores_id'] > 0) {
+        if (!empty($User->id) && $User->id > 0) {
             // 1) All redemptions of the single store (no groupBy)
             $redemptions = $applyFilters(
                 LoyaltyRedemption::select(array_merge(['redemption.*'], $storeColumns))
