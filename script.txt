@@ -120,3 +120,7 @@ AFTER max_discount_value;
 
 ALTER TABLE `stores`
 ADD COLUMN `updated_by_store` BIGINT UNSIGNED NULL AFTER `updated_at`;
+
+ALTER TABLE `reward`
+ADD COLUMN `is_reject` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_active`,
+ADD COLUMN `reject_reason` TEXT NULL AFTER `is_reject`;

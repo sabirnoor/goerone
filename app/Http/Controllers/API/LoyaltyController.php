@@ -1436,7 +1436,8 @@ class LoyaltyController extends Controller
                 // die('ddd');
                 $validator = Validator::make($request->all(), [
                     'program_id' => 'required',
-                    'stores_id' => 'required',
+                    // Store users are always mapped to their own store, so they don't send a store list.
+                    'stores_id' => isset($user->UserType) ? 'required' : 'nullable',
                     'is_active' => 'required',
                     'reward_name' => 'required|max:191',
                     'description' => 'required',
@@ -1500,6 +1501,36 @@ class LoyaltyController extends Controller
                     // $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
                     $reward_id = (isset($request->reward_id) && $request->reward_id > 0) ? $request->reward_id : 0;
                     $parent_id = (isset($request->parent_id) && $request->parent_id > 0) ? $request->parent_id : 0;
+
+                    // ---- Store-created / approval rules ----------------------------------
+                    $isEdit = $reward_id > 0;
+                    $rootId = $parent_id > 0 ? $parent_id : $reward_id; // parent row of the program group
+                    $creatorStoreId = $isEdit ? LoyaltyReward::getCreatedByStore($reward_id) : null;
+                    $isStoreCreated = !empty($creatorStoreId);
+                    $preservedStatus = [];
+
+                    if ($isStoreUser && $isEdit && (!$isStoreCreated || (int) $creatorStoreId !== (int) $user->id)) {
+                        // Rewards created by admin (or by another store) are read-only for stores.
+                        DB::rollback();
+                        return response()->json([
+                            'status' => ['success' => false, 'httpStatus' => 403],
+                            'message' => 'This reward has been created by admin. If you want to change it, please contact admin.',
+                        ]);
+                    }
+
+                    if (!$isStoreUser && $isStoreCreated) {
+                        // Admin editing a store-created reward: status is only changed from the approval page.
+                        $rootRow = LoyaltyReward::where('reward_id', $rootId)->where('AgencyID', $AgencyID)->first();
+                        if ($rootRow) {
+                            $preservedStatus = [
+                                'is_active' => $rootRow->is_active,
+                                'is_reject' => $rootRow->is_reject,
+                                'reject_reason' => $rootRow->reject_reason,
+                            ];
+                        }
+                    }
+                    // -----------------------------------------------------------------------
+
                     if ($request->program_id && explode(',', $request->program_id)) {
                         $parentId = 0;
                         foreach (explode(',', $request->program_id) as $key => $value) {
@@ -1510,7 +1541,8 @@ class LoyaltyController extends Controller
                                 'UserSysId' => $UserSysId,
                                 'program_id' => $value, //$request->program_id,
                                 // 'stores_id' => $request->stores_id,
-                                'is_active' => $request->is_active,
+                                // Store-created rewards always start inactive until admin approves.
+                                'is_active' => $isStoreUser ? 0 : $request->is_active,
                                 'points_required' => $request->points_required,
                                 'reward_name' => $request->reward_name,
                                 // 'stock_quantity' => 0,
@@ -1527,6 +1559,13 @@ class LoyaltyController extends Controller
                                 'maxdiscount_slabs' => json_encode($slabs),
                                 'max_reward_value'    => isset($request->max_reward_value) ? (float)$request->max_reward_value : 0,
                             ];
+                            if ($isStoreUser) {
+                                // Any create / edit by a store (re)enters the approval queue.
+                                $CreateData['is_reject'] = 0;
+                                $CreateData['reject_reason'] = null;
+                            } elseif (!empty($preservedStatus)) {
+                                $CreateData = array_merge($CreateData, $preservedStatus);
+                            }
                             $imagePath = '';
                             if ($request->hasFile('reward_logo')) {
                                 $image = $request->file('reward_logo');
@@ -1600,13 +1639,14 @@ class LoyaltyController extends Controller
                             //     DB::commit();
                             // }
                             if ($user && $insertGetId) {
-                                if ($request->stores_id) {
+                                if ($request->stores_id || $isStoreUser) {
 
-                                    $stores_ids = json_decode($request->stores_id, true);
+                                    $stores_ids = json_decode($request->stores_id ?? '[]', true) ?: [];
 
                                     if ($isStoreUser) {
-                                        // Store user: update only this store's existing mapping.
-                                        foreach ($stores_ids as $vl) {
+                                        // Store user: only ever touches its own mapping; the name comes from the DB, not the request.
+                                        $ownStoreName = Store::where('id', $user->id)->value('store_name') ?? ($stores_ids[0]['store_name'] ?? '');
+                                        foreach ([['id' => $user->id, 'store_name' => $ownStoreName]] as $vl) {
                                             $mapping = StoresMapping::where(
                                                 'reward_id',
                                                 $insertGetId
@@ -1633,6 +1673,24 @@ class LoyaltyController extends Controller
                                                     'created_at' => date('Y-m-d H:i:s'),
                                                     'updated_at' => date('Y-m-d H:i:s'),
                                                     'isdelete' => 0,
+                                                ]);
+                                            }
+                                        }
+                                    } elseif ($isStoreCreated) {
+                                        // Admin editing a store-created reward: store assignment is locked.
+                                        // Only a newly created child (program) row needs mappings, copied from the parent.
+                                        $hasMapping = StoresMapping::where('reward_id', $insertGetId)->where('isdelete', 0)->exists();
+                                        if (!$hasMapping) {
+                                            foreach (StoresMapping::where('reward_id', $rootId)->where('isdelete', 0)->get() as $m) {
+                                                StoresMapping::insert([
+                                                    'AgencyID' => $m->AgencyID,
+                                                    'UserSysId' => $m->UserSysId,
+                                                    'stores_id' => $m->stores_id,
+                                                    'store_name' => $m->store_name,
+                                                    'reward_id' => $insertGetId,
+                                                    'created_by_store' => $m->created_by_store,
+                                                    'created_at' => date('Y-m-d H:i:s'),
+                                                    'updated_at' => date('Y-m-d H:i:s'),
                                                 ]);
                                             }
                                         }
@@ -1674,6 +1732,19 @@ class LoyaltyController extends Controller
                             }
                         }
 
+                        if ($isStoreUser) {
+                            if ($isEdit) {
+                                // Keep every program row of this reward in the same pending state.
+                                LoyaltyReward::where('AgencyID', $AgencyID)
+                                    ->where(function ($q) use ($rootId) {
+                                        $q->where('reward_id', $rootId)->orWhere('parent_id', $rootId);
+                                    })
+                                    ->update(['is_active' => 0, 'is_reject' => 0, 'reject_reason' => null]);
+                            }
+                            $message = ($isEdit ? 'Reward updated' : 'Reward created')
+                                . ' and sent for admin approval. It stays inactive until admin approves it.';
+                        }
+
                         return response()->json([
                             'status' => [
                                 'success' => true,
@@ -1696,6 +1767,111 @@ class LoyaltyController extends Controller
             ]);
         }
     }
+    /**
+     * Admin approval queue (store-created rewards).
+     * POST: status = pending | rejected | approved | all, per_page
+     */
+    public function rewardApprovalList(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!LoyaltyReward::canApprove($user)) {
+                return response()->json([
+                    'status' => ['success' => false, 'httpStatus' => 403],
+                    'message' => 'Only admin can view reward approvals.',
+                ]);
+            }
+
+            $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
+            $status = in_array($request->status, ['pending', 'rejected', 'approved', 'all'], true) ? $request->status : 'pending';
+            $result = LoyaltyReward::getApprovalList($user, $perPage, $status);
+
+            return response()->json([
+                'status' => ['success' => true, 'httpStatus' => 200],
+                'message' => 'Success',
+                'data' => $result,
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 500],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
+
+    /** POST: reward_id */
+    public function approveReward(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!LoyaltyReward::canApprove($user)) {
+                return response()->json([
+                    'status' => ['success' => false, 'httpStatus' => 403],
+                    'message' => 'Only admin can approve rewards.',
+                ]);
+            }
+
+            $validator = Validator::make($request->all(), ['reward_id' => 'required|integer']);
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => ['success' => false, 'httpStatus' => 422],
+                    'message' => $validator->errors()->first(),
+                ]);
+            }
+
+            [$ok, $message] = LoyaltyReward::setApprovalStatus($user, (int) $request->reward_id, true);
+
+            return response()->json([
+                'status' => ['success' => $ok, 'httpStatus' => $ok ? 200 : 422],
+                'message' => $message,
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 500],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
+
+    /** POST: reward_id, reject_reason (required) */
+    public function rejectReward(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!LoyaltyReward::canApprove($user)) {
+                return response()->json([
+                    'status' => ['success' => false, 'httpStatus' => 403],
+                    'message' => 'Only admin can reject rewards.',
+                ]);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'reward_id' => 'required|integer',
+                'reject_reason' => 'required|string|max:1000',
+            ], [
+                'reject_reason.required' => 'Please enter a reason for rejecting this reward.',
+            ]);
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => ['success' => false, 'httpStatus' => 422],
+                    'message' => $validator->errors()->first(),
+                ]);
+            }
+
+            [$ok, $message] = LoyaltyReward::setApprovalStatus($user, (int) $request->reward_id, false, trim($request->reject_reason));
+
+            return response()->json([
+                'status' => ['success' => $ok, 'httpStatus' => $ok ? 200 : 422],
+                'message' => $message,
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 500],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
+
     public function assigncard(Request $request)
     {
         try {
