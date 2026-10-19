@@ -117,3 +117,6 @@ ADD COLUMN updated_by_store BIGINT NULL DEFAULT NULL;
 ALTER TABLE vouchers
 ADD COLUMN min_purchase_value DECIMAL(10,2) NULL
 AFTER max_discount_value;
+
+ALTER TABLE `stores`
+ADD COLUMN `updated_by_store` BIGINT UNSIGNED NULL AFTER `updated_at`;

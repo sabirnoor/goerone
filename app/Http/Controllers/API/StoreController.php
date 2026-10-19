@@ -65,7 +65,7 @@ class StoreController extends Controller
 
             $isOwner = $user->UserType == 1
                 ? $image->store->AgencyID == $user->id
-                : $image->store->UserSysId == $user->id;
+                : ($image->store->UserSysId == $user->id || $image->store->id == $user->id);
 
             if (!$isOwner) {
                 return response()->json([
@@ -288,10 +288,10 @@ class StoreController extends Controller
                     'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
                     'store_name'   => $request->store_name,
                     'store_id'     => $request->store_id,
-                    'settlement_day'     => $request->settlement_day ?? 7,
+                    'settlement_day'   => $request->settlement_day ?? 7,
                     'email'        => $request->email,
                     'contact_name' => $request->contact_name,
-                    'phone'       => $request->phone,
+                    'phone'        => $request->phone,
                     'alt_mobile'   => $request->alt_mobile,
                     'website_url'  => $request->website_url,
                     'description'  => $request->description,
@@ -305,18 +305,18 @@ class StoreController extends Controller
                     'gatenumber'         => isset($request->gatenumber) ? $request->gatenumber : '',
                     'event_time'         => isset($request->event_time) ? $request->event_time : '',
                     'entry_time'         => isset($request->entry_time) ? $request->entry_time : '',
-                    'rewardrequired'         => isset($request->rewardrequired) ? (int)$request->rewardrequired : 0,
+                    'rewardrequired'     => isset($request->rewardrequired) ? (int)$request->rewardrequired : 0,
                     'swipelimit'         => isset($request->swipelimit) ? (int)$request->swipelimit : 0,
-                    'swipeinyear'         => isset($request->swipeinyear) ? (int)$request->swipeinyear : 0,
-                    'monthlyswipe'         => isset($request->monthlyswipe) ? (int)$request->monthlyswipe : 0,
+                    'swipeinyear'        => isset($request->swipeinyear) ? (int)$request->swipeinyear : 0,
+                    'monthlyswipe'       => isset($request->monthlyswipe) ? (int)$request->monthlyswipe : 0,
                     'OTPAllowed'         => isset($request->OTPAllowed) ? (int)$request->OTPAllowed : 0,
                     'vendortype'         => isset($request->vendortype) ? (int)$request->vendortype : 0,
-                    'vendor_category'         => isset($request->vendor_category) ? $request->vendor_category : '',
-                    'FaceRecognition'         => isset($request->FaceRecognition) ? (int)$request->FaceRecognition : 0,
+                    'vendor_category'    => isset($request->vendor_category) ? $request->vendor_category : '',
+                    'FaceRecognition'    => isset($request->FaceRecognition) ? (int)$request->FaceRecognition : 0,
                     'event_date'         => (isset($request->event_date) && !empty($request->event_date)) ? $formattedDate : now(),
                     'lat'         => isset($request->latitude) ? $request->latitude : '',
                     'lon'         => isset($request->longitude) ? $request->longitude : '',
-                    'placeId'         => isset($request->placeId) ? $request->placeId : '',
+                    'placeId'     => isset($request->placeId) ? $request->placeId : '',
                     // (a) weekly open/close schedule — unchecked days come through with is_open=false
                     'store_timings'   => $request->filled('store_timings') ? $request->store_timings : null,
                     // (b) product types the store deals in
@@ -371,8 +371,29 @@ class StoreController extends Controller
                     ]);
                 }
                 if ($storeId) {
+                    $user = $request->user();
+                    $existingStore = Store::with('images')->find($storeId);
+                    $isAgency = isset($user->UserType) && $user->UserType == 1;
+
+                    $AgencyID = $isAgency  ? $user->id : $user->AgencyID;
+                    $UserSysId = $isAgency ? $user->id : $user->AgencyID;
+                    if (!$existingStore) {
+                        return response()->json([
+                            'status' => [ 'success' => false,
+                            'httpStatus' => 404, ], 'message' => 'Store not found.',], 404);}
+
+                    $isOwner = $user->UserType == 1 ? $existingStore->AgencyID == $user->id
+                    : ($existingStore->UserSysId == $user->id || $existingStore->id == $user->id);
+
+                    if (!$isOwner) {
+                        return response()->json([
+                            'status' => [ 'success' => false,'httpStatus' => 403],
+                            'message' => 'You are not authorized to update this store.',
+                        ], 403);
+                    }
                     unset($storeData['email']);
-                    $storeData['UserSysId'] =  $UserData;
+                    $storeData['UserSysId'] =  $UserSysId;
+                    $storeData['updated_by_store'] = $isAgency ? null  : $user->id;
                     Store::where('id', $storeId)->update($storeData);
                     $store = Store::with('images')->find($storeId);
                     $message = "Store Updated Successfully!";

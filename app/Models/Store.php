@@ -24,6 +24,7 @@ class Store extends Authenticatable
         'is_halal',
         'food_type',
         'alcohol_allowed',
+        'updated_by_store'
     ];
 
     protected $hidden = [
