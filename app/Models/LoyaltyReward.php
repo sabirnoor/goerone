@@ -17,6 +17,82 @@ class LoyaltyReward extends Model
     'maxdiscount_slabs' => 'array',
     ];
 
+    /* ------------------------------------------------------------------
+     * Store-created reward / approval helpers
+     *
+     * A reward is "store-created" when it has a non-deleted stores_mapping
+     * row whose created_by_store is not null (only the store-user path in
+     * addreward() ever writes that column).
+     * ------------------------------------------------------------------ */
+
+    /** Who is allowed to approve / reject. Store users never can. Change here only. */
+    public static function canApprove($User): bool
+    {
+        return isset($User->UserType);
+    }
+
+    /** created_by_store of a reward row (null when admin-created). */
+    public static function getCreatedByStore($rewardId)
+    {
+        return StoresMapping::where('reward_id', $rewardId)
+            ->where('isdelete', 0)
+            ->whereNotNull('created_by_store')
+            ->orderBy('id')
+            ->value('created_by_store');
+    }
+
+    public static function isStoreCreated($rewardId): bool
+    {
+        return !empty(self::getCreatedByStore($rewardId));
+    }
+
+    /** reward_id => {created_by_store, store_name} for a set of reward rows. */
+    public static function creatorMap(array $rewardIds)
+    {
+        if (empty($rewardIds)) {
+            return collect();
+        }
+
+        return StoresMapping::whereIn('reward_id', $rewardIds)
+            ->where('isdelete', 0)
+            ->whereNotNull('created_by_store')
+            ->orderBy('id')
+            ->get(['reward_id', 'created_by_store', 'store_name'])
+            ->groupBy('reward_id')
+            ->map(fn ($rows) => $rows->first());
+    }
+
+    /** Attach the flags the UI needs to a reward row. */
+    public static function decorate($reward, $User, $creators)
+    {
+        $creator = $creators->get($reward->reward_id);
+        $createdBy = $creator->created_by_store ?? null;
+        $isStoreViewer = !isset($User->UserType);
+
+        $reward->created_by_store = $createdBy;
+        $reward->created_by_store_name = $creator->store_name ?? null;
+        $reward->is_store_created = !empty($createdBy);
+        $reward->viewer_is_store = $isStoreViewer;
+        // Store users: only their own rewards are editable. Admin: everything.
+        $reward->can_edit = $isStoreViewer
+            ? (!empty($createdBy) && (int) $createdBy === (int) $User->id)
+            : true;
+        // Admin cannot change the store assignment of a store-created reward.
+        $reward->lock_stores = !$isStoreViewer && !empty($createdBy);
+
+        if (empty($createdBy)) {
+            $reward->approval_status = null;
+        } elseif ((int) ($reward->is_reject ?? 0) === 1) {
+            $reward->approval_status = 'rejected';
+        } elseif ((int) $reward->is_active === 1) {
+            $reward->approval_status = 'approved';
+        } else {
+            $reward->approval_status = 'pending';
+        }
+
+        return $reward;
+    }
+
     public static function getloyaltyReward($User, $perPage, $post = array())
     {
         // $responsedata = LoyaltyReward::select(
@@ -70,9 +146,13 @@ class LoyaltyReward extends Model
             DB::raw('GROUP_CONCAT(CONCAT(stores_mapping.stores_id, ":", stores_mapping.store_name) SEPARATOR ", ") as store_info')
         )
             ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
-            ->leftJoin('stores_mapping', function ($join) {
+            ->leftJoin('stores_mapping', function ($join) use ($User) {
                 $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
                     ->where('stores_mapping.isdelete', 0);
+            // Store users should only see their own store mapping.
+            if (!isset($User->UserType)) {
+                $join->where('stores_mapping.stores_id', $User->id);
+            }
             })
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
@@ -109,7 +189,8 @@ class LoyaltyReward extends Model
             ->groupBy('parent_id'); // group by parent reward_id
 
         // 3️⃣ Attach program list to each parent reward (include parent’s own program)
-        $rewards->getCollection()->transform(function ($reward) use ($childPrograms) {
+        $creators = self::creatorMap($parentIds);
+        $rewards->getCollection()->transform(function ($reward) use ($childPrograms, $creators, $User) {
             // Parent program
             $parentProgram = collect([
                 (object)[
@@ -122,7 +203,7 @@ class LoyaltyReward extends Model
             $childProgramList = $childPrograms->get($reward->reward_id, collect());
             // Merge both (parent first)
             $reward->program = $parentProgram->merge($childProgramList)->values();
-            return $reward;
+            return self::decorate($reward, $User, $creators);
         });
 
 
@@ -139,9 +220,13 @@ class LoyaltyReward extends Model
         )
             ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
             // ->leftJoin('stores_mapping', 'stores_mapping.reward_id', '=', 'reward.reward_id')
-            ->leftJoin('stores_mapping', function ($join) {
+            ->leftJoin('stores_mapping', function ($join) use ($User) {
                 $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
                     ->where('stores_mapping.isdelete', 0);
+                // Store users should only see their own store mapping.
+                if (!isset($User->UserType)) {
+                    $join->where('stores_mapping.stores_id', $User->id);
+                }
             })
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
@@ -162,6 +247,9 @@ class LoyaltyReward extends Model
             ->groupBy('reward.reward_id')
             ->orderBy('reward.reward_id', 'DESC')
             ->get();
+
+        $creators = self::creatorMap($responsedata->pluck('reward_id')->all());
+        $responsedata->transform(fn ($reward) => self::decorate($reward, $User, $creators));
 
         return $responsedata;
     }
@@ -460,5 +548,77 @@ class LoyaltyReward extends Model
     }
 
     return [$out, null];
+    }
+
+    /**
+     * Admin approval queue: store-created parent rewards.
+     * $status: pending | rejected | approved | all
+     */
+    public static function getApprovalList($User, $perPage, $status = 'pending')
+    {
+        $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
+
+        $query = LoyaltyReward::select(
+            'reward.*',
+            DB::raw('DATE_FORMAT(reward.created_at, "%d %b, %Y") as createdDate'),
+            'loyalty_program.program_name',
+            DB::raw('(SELECT COUNT(*) FROM reward c WHERE c.parent_id = reward.reward_id) as child_count')
+        )
+            ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
+            ->where('reward.AgencyID', $AgencyID)
+            ->where('reward.parent_id', 0)
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('stores_mapping as smc')
+                    ->whereColumn('smc.reward_id', 'reward.reward_id')
+                    ->where('smc.isdelete', 0)
+                    ->whereNotNull('smc.created_by_store');
+            });
+
+        if ($status === 'pending') {
+            $query->where('reward.is_active', 0)->where('reward.is_reject', 0);
+        } elseif ($status === 'rejected') {
+            $query->where('reward.is_reject', 1);
+        } elseif ($status === 'approved') {
+            $query->where('reward.is_active', 1)->where('reward.is_reject', 0);
+        }
+
+        $rewards = $query->orderBy('reward.reward_id', 'DESC')->paginate($perPage);
+
+        $creators = self::creatorMap($rewards->pluck('reward_id')->all());
+        $rewards->getCollection()->transform(fn ($reward) => self::decorate($reward, $User, $creators));
+
+        return $rewards;
+    }
+
+    /**
+     * Approve or reject a store-created reward. Applies to the parent row and
+     * all child (per-program) rows. Returns [bool success, string message].
+     */
+    public static function setApprovalStatus($User, $rewardId, bool $approve, $reason = null): array
+    {
+        $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
+
+        $row = LoyaltyReward::where('AgencyID', $AgencyID)->where('reward_id', $rewardId)->first();
+        if (!$row) {
+            return [false, 'Reward not found.'];
+        }
+
+        $rootId = $row->parent_id > 0 ? $row->parent_id : $row->reward_id;
+        if (!self::isStoreCreated($rootId)) {
+            return [false, 'Only rewards created by a store need approval.'];
+        }
+
+        $data = $approve
+            ? ['is_active' => 1, 'is_reject' => 0, 'reject_reason' => null]
+            : ['is_active' => 0, 'is_reject' => 1, 'reject_reason' => $reason];
+
+        LoyaltyReward::where('AgencyID', $AgencyID)
+            ->where(function ($q) use ($rootId) {
+                $q->where('reward_id', $rootId)->orWhere('parent_id', $rootId);
+            })
+            ->update($data);
+
+        return [true, $approve ? 'Reward approved and now active.' : 'Reward rejected.'];
     }
 }
