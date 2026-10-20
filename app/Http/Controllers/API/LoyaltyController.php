@@ -390,15 +390,15 @@ class LoyaltyController extends Controller
                 ]);
             }
             $TotalReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)->where('stores_id', $accessToken->tokenable_id)->count();
-            if ($TotalReddemPass > 0) {
-                return response()->json([
-                    'status' => [
-                        'success' => false,
-                        'httpStatus' => 4001,
-                    ],
-                    'message' => 'Redemption already processed.'
-                ]);
-            }
+            // if ($TotalReddemPass > 0) {
+            //     return response()->json([
+            //         'status' => [
+            //             'success' => false,
+            //             'httpStatus' => 4001,
+            //         ],
+            //         'message' => 'Redemption already processed.'
+            //     ]);
+            // }
 
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
@@ -1859,7 +1859,7 @@ class LoyaltyController extends Controller
         }
     }
 
-    
+
     /**
      * Store deactivates its own approved reward.
      * POST: reward_id
@@ -1947,7 +1947,7 @@ class LoyaltyController extends Controller
             LoyaltyReward::where('AgencyID', $AgencyID)
                 ->where(function ($q) use ($rootId) {
                     $q->where('reward_id', $rootId)
-                    ->orWhere('parent_id', $rootId);
+                        ->orWhere('parent_id', $rootId);
                 })
                 ->update([
                     'is_active' => 0,
