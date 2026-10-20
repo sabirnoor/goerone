@@ -377,7 +377,7 @@ class VouchersController extends Controller
             $status = 'active';
             $store_id = $request->store_id ?? 0;
             try {
-                $voucher = CustomerVoucher::select('customer_vouchers.*', 'vouchers.store_id as voucher_store_id')
+                $voucher = CustomerVoucher::with('voucher', 'customer:id,name')->select('customer_vouchers.*', 'vouchers.store_id as voucher_store_id')
                     ->join('vouchers', 'customer_vouchers.voucher_id', '=', 'vouchers.id')
                     ->when(function ($query) use ($authUser, $store_id) {
                         if ($authUser instanceof Store) {
