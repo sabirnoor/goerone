@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 
 class CustomerVoucher extends Model
 {
@@ -23,6 +24,10 @@ class CustomerVoucher extends Model
 
     protected $casts = ['used_at' => 'datetime'];
 
+    public function customer()
+    {
+        return $this->belongsTo(User::class, 'customer_id')->without('details', 'agency', 'symbal');
+    }
     public function order()
     {
         return $this->belongsTo(VoucherOrder::class, 'voucher_order_id');
@@ -35,7 +40,19 @@ class CustomerVoucher extends Model
     {
         return $this->belongsTo(VoucherOrderItem::class, 'voucher_order_item_id')->with('voucher');
     }
+    /** Codes this customer can still redeem right now */
+    public function scopeRedeemable(Builder $q, int $customerId): Builder
+    {
+        return $q->where('customer_id', $customerId)
+            ->where('status', 'active')
+            ->where(fn($w) => $w->whereNull('valid_from')->orWhereDate('valid_from', '<=', today()))
+            ->where(fn($w) => $w->whereNull('valid_to')->orWhereDate('valid_to', '>=', today()));
+    }
 
+    public function isExpired(): bool
+    {
+        return $this->valid_to && Carbon::parse($this->valid_to)->endOfDay()->isPast();
+    }
     /** 'active' becomes 'expired' automatically once valid_to has passed */
     public function getEffectiveStatusAttribute(): string
     {

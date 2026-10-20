@@ -23,6 +23,7 @@ use App\Models\Vouchers;
 use App\Models\WalletModel;
 use App\Services\OtpService;
 use App\Services\RewardService;
+use App\Services\Voucher\VoucherRedeemService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -120,6 +121,7 @@ class LoyaltyController extends Controller
         DB::beginTransaction();
         try {
             $membershipId = $request->membershipId ?? 0;
+            $voucher_code = $request->voucher_code ?? null;
             $mep = $request->mep ?? 0;
 
             $checkUserCardExist = LoyaltyUserCard::with('program')->select('user_card.*', 'loyalty_card.program_id')
@@ -397,6 +399,7 @@ class LoyaltyController extends Controller
                     'message' => 'Redemption already processed.'
                 ]);
             }
+
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
             $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscount_slabs', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
@@ -629,6 +632,11 @@ class LoyaltyController extends Controller
                             ]);
                         }
                     }
+                    // pr($accessToken->tokenable_id);
+                    // $validate = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
+                    // pr($validate);
+
+                    // die;
                     $wallet = [
                         "customer_id" => $user->id,
                         "amount" => $BookingAmount,
