@@ -56,7 +56,9 @@ class VoucherRedeemService
         ?string $customerType = null
     ): array {
         return DB::transaction(function () use ($user, $voucherCode, $orderAmount, $bookingType, $bookingRef, $customerType) {
+            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
             $voucher = CustomerVoucher::with('orderItem')
+                ->where('AgencyID', $AgencyID)
                 ->where('voucher_code', $voucherCode)
                 ->lockForUpdate()
                 ->first();

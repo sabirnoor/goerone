@@ -448,7 +448,9 @@ class LoyaltyController extends Controller
                 $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
             }
 
-
+            if (!empty($voucher_code)) {
+                app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
+            }
             // pr($maxdiscountvalue);
             // pr($discount);
             // pr($discountOwner);
@@ -632,11 +634,20 @@ class LoyaltyController extends Controller
                             ]);
                         }
                     }
-                    // pr($accessToken->tokenable_id);
-                    // $validate = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
-                    // pr($validate);
-
-                    // die;
+                    if (!empty($voucher_code)) {
+                        $validate = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
+                        $payable = ($validate['payable'] ?? 0);
+                        if ($payable > 0) {
+                            $redm = app(VoucherRedeemService::class)->redeem(
+                                $request->user(),
+                                $voucher_code,
+                                $request->order_amount,
+                                'CustomerUsed',
+                                $referneceNo
+                            );
+                            $BookingAmount = ($BookingAmount - ($payable));
+                        }
+                    }
                     $wallet = [
                         "customer_id" => $user->id,
                         "amount" => $BookingAmount,
