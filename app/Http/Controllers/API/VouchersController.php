@@ -159,7 +159,9 @@ class VouchersController extends Controller
                                     'valid_to' => (!empty($request->valid_to) && $request->valid_from != "null") ? $request->valid_to : null,
                                 ];
 
-                                if ($approvalRequired) {
+                                // New vouchers from stores require approval.
+                                // Existing approved vouchers can be deactivated directly by the store.
+                                if ($approvalRequired && $voucher_id == 0) {
                                     $dataSet['is_active'] = 0;
                                     $dataSet['approval_status'] = 0;
                                     $dataSet['reject_reason'] = null;
@@ -178,14 +180,38 @@ class VouchersController extends Controller
                                         $q->where('UserSysId', $UserSysId)
                                             ->orWhere('store_id', $UserSysId);
                                     })->first();
+                                    
                                     if ($row) {
-                                        // admin can't activate a pending/rejected voucher through the form; must use Approve
-                                        if ($isAgency && (int) $row->approval_status !== 1) {
-                                            $dataSet['is_active'] = 0;
+                                    if ($approvalRequired) {
+                                        // Store can deactivate an already-approved voucher immediately.
+                                        if ((int) $row->approval_status === 1 && (int) $request->is_active === 0) {
+                                            $row->update(['is_active' => 0]);
+                                            // Do not reset approval_status or submit for approval.
+                                            // Preserve all other existing voucher details.
+                                            continue;
                                         }
-                                        $row->update($dataSet);
-                                        $this->syncMemberships($row->id, $membershipIds);
+                                        // Existing store edit workflow: submit changes for approval.
+                                        $dataSet['is_active'] = 0;
+                                        $dataSet['approval_status'] = 0;
+                                        $dataSet['reject_reason'] = null;
                                     }
+
+                                    // Admin cannot activate a pending/rejected voucher through this form.
+                                    if ($isAgency && (int) $row->approval_status !== 1) {
+                                        $dataSet['is_active'] = 0;
+                                    }
+
+                                    $row->update($dataSet);
+                                    $this->syncMemberships($row->id, $membershipIds);
+                                    }
+                                    // if ($row) {
+                                    //     // admin can't activate a pending/rejected voucher through the form; must use Approve
+                                    //     if ($isAgency && (int) $row->approval_status !== 1) {
+                                    //         $dataSet['is_active'] = 0;
+                                    //     }
+                                    //     $row->update($dataSet);
+                                    //     $this->syncMemberships($row->id, $membershipIds);
+                                    // }
                                 } else {
                                     return [
                                         'status' => [

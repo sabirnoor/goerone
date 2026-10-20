@@ -72,6 +72,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('reward-approval-list', [LoyaltyController::class, 'rewardApprovalList']);
         Route::post('reward-approve', [LoyaltyController::class, 'approveReward']);
         Route::post('reward-reject', [LoyaltyController::class, 'rejectReward']);
+        Route::post('/rewards/deactivate',[LoyaltyController::class, 'deactivateReward']);
 
         //Route::post('validateusercard', [LoyaltyController::class, 'validateusercard']);
         Route::post('membership', [MembershipController::class, 'membershipList']);

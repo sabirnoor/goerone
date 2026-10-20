@@ -63,6 +63,7 @@ class LoyaltyReward extends Model
     }
 
     /** Attach the flags the UI needs to a reward row. */
+   
     public static function decorate($reward, $User, $creators)
     {
         $creator = $creators->get($reward->reward_id);
@@ -73,25 +74,24 @@ class LoyaltyReward extends Model
         $reward->created_by_store_name = $creator->store_name ?? null;
         $reward->is_store_created = !empty($createdBy);
         $reward->viewer_is_store = $isStoreViewer;
-        // Store users: only their own rewards are editable. Admin: everything.
+
+        // Stores can edit only rewards they created.
         $reward->can_edit = $isStoreViewer
             ? (!empty($createdBy) && (int) $createdBy === (int) $User->id)
             : true;
+
         // Admin cannot change the store assignment of a store-created reward.
         $reward->lock_stores = !$isStoreViewer && !empty($createdBy);
 
+        // Keep approval_status numeric: 0 pending, 1 approved, 2 rejected.
+        // Admin-created rewards do not require store approval.
         if (empty($createdBy)) {
             $reward->approval_status = null;
-        } elseif ((int) ($reward->is_reject ?? 0) === 1) {
-            $reward->approval_status = 'rejected';
-        } elseif ((int) $reward->is_active === 1) {
-            $reward->approval_status = 'approved';
-        } else {
-            $reward->approval_status = 'pending';
         }
 
         return $reward;
     }
+
 
     public static function getloyaltyReward($User, $perPage, $post = array())
     {
@@ -576,11 +576,11 @@ class LoyaltyReward extends Model
             });
 
         if ($status === 'pending') {
-            $query->where('reward.is_active', 0)->where('reward.is_reject', 0);
+        $query->where('reward.approval_status', 0);
         } elseif ($status === 'rejected') {
-            $query->where('reward.is_reject', 1);
+            $query->where('reward.approval_status', 2);
         } elseif ($status === 'approved') {
-            $query->where('reward.is_active', 1)->where('reward.is_reject', 0);
+            $query->where('reward.approval_status', 1);
         }
 
         $rewards = $query->orderBy('reward.reward_id', 'DESC')->paginate($perPage);
@@ -609,9 +609,8 @@ class LoyaltyReward extends Model
             return [false, 'Only rewards created by a store need approval.'];
         }
 
-        $data = $approve
-            ? ['is_active' => 1, 'is_reject' => 0, 'reject_reason' => null]
-            : ['is_active' => 0, 'is_reject' => 1, 'reject_reason' => $reason];
+        $data = $approve ? ['approval_status' => 1,'is_active' => 1,'reject_reason' => null,
+                ]: ['approval_status' => 2, 'is_active'  => 0, 'reject_reason' => $reason];
 
         LoyaltyReward::where('AgencyID', $AgencyID)
             ->where(function ($q) use ($rootId) {

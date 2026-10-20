@@ -130,3 +130,9 @@ ALTER TABLE vouchers
   ADD COLUMN reject_reason VARCHAR(500) NULL AFTER approval_status,
   ADD COLUMN reviewed_by INT NULL AFTER reject_reason,
   ADD COLUMN reviewed_at TIMESTAMP NULL AFTER reviewed_by;
+
+ALTER TABLE `reward`
+ADD COLUMN `approval_status` TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '0=pending,1=approved,2=rejected'
+AFTER `is_active`;
+
+ALTER TABLE `reward` DROP COLUMN `is_reject`;

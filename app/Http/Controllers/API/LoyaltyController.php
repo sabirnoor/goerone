@@ -1543,7 +1543,7 @@ class LoyaltyController extends Controller
                         if ($rootRow) {
                             $preservedStatus = [
                                 'is_active' => $rootRow->is_active,
-                                'is_reject' => $rootRow->is_reject,
+                                'approval_status' => $rootRow->approval_status,
                                 'reject_reason' => $rootRow->reject_reason,
                             ];
                         }
@@ -1579,8 +1579,9 @@ class LoyaltyController extends Controller
                                 'max_reward_value'    => isset($request->max_reward_value) ? (float)$request->max_reward_value : 0,
                             ];
                             if ($isStoreUser) {
-                                // Any create / edit by a store (re)enters the approval queue.
-                                $CreateData['is_reject'] = 0;
+                                // New or edited store rewards require admin approval.
+                                $CreateData['approval_status'] = 0;
+                                $CreateData['is_active'] = 0;
                                 $CreateData['reject_reason'] = null;
                             } elseif (!empty($preservedStatus)) {
                                 $CreateData = array_merge($CreateData, $preservedStatus);
@@ -1753,13 +1754,19 @@ class LoyaltyController extends Controller
 
                         if ($isStoreUser) {
                             if ($isEdit) {
-                                // Keep every program row of this reward in the same pending state.
+                                // Reset the reward and all its program rows to pending approval.
                                 LoyaltyReward::where('AgencyID', $AgencyID)
                                     ->where(function ($q) use ($rootId) {
-                                        $q->where('reward_id', $rootId)->orWhere('parent_id', $rootId);
+                                        $q->where('reward_id', $rootId)
+                                            ->orWhere('parent_id', $rootId);
                                     })
-                                    ->update(['is_active' => 0, 'is_reject' => 0, 'reject_reason' => null]);
+                                    ->update([
+                                        'approval_status' => 0,
+                                        'is_active' => 0,
+                                        'reject_reason' => null,
+                                    ]);
                             }
+
                             $message = ($isEdit ? 'Reward updated' : 'Reward created')
                                 . ' and sent for admin approval. It stays inactive until admin approves it.';
                         }
@@ -1851,6 +1858,119 @@ class LoyaltyController extends Controller
             ]);
         }
     }
+
+    
+    /**
+     * Store deactivates its own approved reward.
+     * POST: reward_id
+     */
+    public function deactivateReward(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            // Store users do not have UserType in the existing auth convention.
+            if (!$user || isset($user->UserType)) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 403,
+                    ],
+                    'message' => 'Only store users can use this action.',
+                ]);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'reward_id' => 'required|integer|min:1',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 422,
+                    ],
+                    'message' => $validator->errors()->first(),
+                ]);
+            }
+
+            $AgencyID = $user->AgencyID;
+            $rewardId = (int) $request->reward_id;
+
+            $row = LoyaltyReward::where('AgencyID', $AgencyID)
+                ->where('reward_id', $rewardId)
+                ->first();
+
+            if (!$row) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 404,
+                    ],
+                    'message' => 'Reward not found.',
+                ]);
+            }
+
+            // Resolve a child row to its root reward.
+            $rootId = $row->parent_id > 0
+                ? $row->parent_id
+                : $row->reward_id;
+
+            // A store may only deactivate rewards created by that same store.
+            $createdByStore = LoyaltyReward::getCreatedByStore($rootId);
+
+            if ((int) $createdByStore !== (int) $user->id) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 403,
+                    ],
+                    'message' => 'You can only deactivate rewards created by your store.',
+                ]);
+            }
+
+            $root = LoyaltyReward::where('AgencyID', $AgencyID)
+                ->where('reward_id', $rootId)
+                ->first();
+
+            if (!$root || (int) $root->approval_status !== 1) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 422,
+                    ],
+                    'message' => 'Only approved rewards can be deactivated.',
+                ]);
+            }
+
+            // Change activation only. Approval remains approved (1).
+            LoyaltyReward::where('AgencyID', $AgencyID)
+                ->where(function ($q) use ($rootId) {
+                    $q->where('reward_id', $rootId)
+                    ->orWhere('parent_id', $rootId);
+                })
+                ->update([
+                    'is_active' => 0,
+                ]);
+
+            return response()->json([
+                'status' => [
+                    'success' => true,
+                    'httpStatus' => 200,
+                ],
+                'message' => 'Reward deactivated successfully.',
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 500,
+                ],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
+
 
     /** POST: reward_id, reject_reason (required) */
     public function rejectReward(Request $request)
