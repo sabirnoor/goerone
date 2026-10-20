@@ -124,3 +124,9 @@ ADD COLUMN `updated_by_store` BIGINT UNSIGNED NULL AFTER `updated_at`;
 ALTER TABLE `reward`
 ADD COLUMN `is_reject` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_active`,
 ADD COLUMN `reject_reason` TEXT NULL AFTER `is_reject`;
+
+ALTER TABLE vouchers
+  ADD COLUMN approval_status TINYINT NOT NULL DEFAULT 1 COMMENT '0=pending,1=approved,2=rejected' AFTER is_active,
+  ADD COLUMN reject_reason VARCHAR(500) NULL AFTER approval_status,
+  ADD COLUMN reviewed_by INT NULL AFTER reject_reason,
+  ADD COLUMN reviewed_at TIMESTAMP NULL AFTER reviewed_by;

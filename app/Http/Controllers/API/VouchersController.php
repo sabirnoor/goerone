@@ -125,6 +125,7 @@ class VouchersController extends Controller
                     $AgencyID = $isAgency  ? $user->id : $user->AgencyID;
                     $UserSysId = $isAgency ? $user->id : $user->AgencyID;
                     $createdByStore = $isAgency ? null  : $user->id;
+                    $approvalRequired = ! $isAgency;
 
                     if ($request->stores_id) {
                         $voucher_id = isset($request->id) ? $request->id : 0;
@@ -158,10 +159,17 @@ class VouchersController extends Controller
                                     'valid_to' => (!empty($request->valid_to) && $request->valid_from != "null") ? $request->valid_to : null,
                                 ];
 
+                                if ($approvalRequired) {
+                                    $dataSet['is_active'] = 0;
+                                    $dataSet['approval_status'] = 0;
+                                    $dataSet['reject_reason'] = null;
+                                }
+
                                 if (!$exists && $voucher_id == 0) {
                                     // Set UserSysId only when creating a new voucher
                                     $dataSet['UserSysId'] = $UserSysId;
                                     $dataSet['created_by_store'] = $createdByStore;
+                                    $dataSet['approval_status'] = $isAgency ? 1 : 0;
 
                                     $Entry = Vouchers::create($dataSet);
                                     $this->syncMemberships($Entry->id, $membershipIds);
@@ -171,6 +179,10 @@ class VouchersController extends Controller
                                             ->orWhere('store_id', $UserSysId);
                                     })->first();
                                     if ($row) {
+                                        // admin can't activate a pending/rejected voucher through the form; must use Approve
+                                        if ($isAgency && (int) $row->approval_status !== 1) {
+                                            $dataSet['is_active'] = 0;
+                                        }
                                         $row->update($dataSet);
                                         $this->syncMemberships($row->id, $membershipIds);
                                     }
@@ -200,7 +212,9 @@ class VouchersController extends Controller
                             'success' => true,
                             'httpStatus' => 200,
                         ],
-                        'message' => 'Add voucher successfully',
+                        'message' => $approvalRequired
+                            ? 'Voucher submitted. It will go live after admin approval.'
+                            : 'Add voucher successfully',
                     ];
                 } catch (\Exception $e) {
                     DB::rollback();
@@ -451,6 +465,90 @@ class VouchersController extends Controller
         } else {
 
             die('Bad request');
+        }
+    }
+
+    public function review(Request $request)
+    {
+        $user = $request->user();
+        if (! (isset($user->UserType) && $user->UserType == 1)) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 403],
+                'message' => 'Only admin can approve or reject vouchers',
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'id'            => 'required|integer',
+            'action'        => 'required|in:approve,reject',
+            'reject_reason' => 'required_if:action,reject|nullable|string|max:500',
+        ], [
+            'reject_reason.required_if' => 'Reject reason is required',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 201],
+                'message' => implode(',', $validator->errors()->all()),
+                'error' => $validator->messages(),
+            ]);
+        }
+
+        $voucher = Vouchers::where('id', $request->id)->where('AgencyID', $user->id)->first();
+        if (! $voucher) {
+            return ['status' => ['success' => false, 'httpStatus' => 404], 'message' => 'Voucher not found'];
+        }
+        if ((int) $voucher->approval_status !== 0) {
+            return ['status' => ['success' => false, 'httpStatus' => 422], 'message' => 'Voucher is not pending approval'];
+        }
+
+        if ($request->action === 'approve') {
+            $voucher->update([
+                'approval_status' => 1,
+                'is_active'       => 1,
+                'reject_reason'   => null,
+                'reviewed_by'     => $user->id,
+                'reviewed_at'     => now(),
+            ]);
+            $msg = 'Voucher approved and is now live';
+        } else {
+            $voucher->update([
+                'approval_status' => 2,
+                'is_active'       => 0,
+                'reject_reason'   => trim($request->reject_reason),
+                'reviewed_by'     => $user->id,
+                'reviewed_at'     => now(),
+            ]);
+            $msg = 'Voucher rejected';
+        }
+
+        return ['status' => ['success' => true, 'httpStatus' => 200], 'message' => $msg];
+    }
+
+    public function approvalList(Request $request)
+    {
+        $user = $request->user();
+        if (! (isset($user->UserType) && $user->UserType == 1)) {
+            return response()->json([
+                'status' => ['success' => false, 'httpStatus' => 403],
+                'message' => 'Only admin can view voucher approvals',
+            ], 403);
+        }
+
+        try {
+            $perPage = ($request->per_page > 0) ? (int) $request->per_page : 25;
+            $status  = in_array((int) $request->status, [0, 1, 2], true) ? (int) $request->status : 0;
+            $result  = Vouchers::getApprovals($user, $perPage, $status);
+
+            return [
+                'status' => ['success' => true, 'httpStatus' => 200],
+                'data' => $result,
+                'message' => 'SUCCESS',
+            ];
+        } catch (\Exception $e) {
+            return [
+                'status' => ['success' => false, 'httpStatus' => 500],
+                'message' => $e->getMessage(),
+            ];
         }
     }
 }

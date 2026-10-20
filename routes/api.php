@@ -112,6 +112,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('my-vouchers', [VouchersController::class, 'vouchers']);
 
         Route::post('voucher-validate', [VouchersController::class, 'vouchervalidate']);
+
+        Route::post('/review', [VouchersController::class, 'review']);
+        Route::post('/approvals', [VouchersController::class, 'approvalList']);
     });
     Route::prefix("products")->group(function () {
         Route::any('/fetch', [ProductController::class, 'fetchproducts'])->name('products.fetch');
