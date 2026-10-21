@@ -150,15 +150,19 @@ class Vouchers extends Model
             'vouchers.owner_share',
             'stores.store_name',
             'stores.email as store_email',
+            'customer_vouchers.used_at',
+            'customer_vouchers.used_ref',
+            'customer_vouchers.status as used_status',
         )
             ->leftJoin('stores', 'stores.id', '=', 'vouchers.store_id')
+            ->leftJoin('customer_vouchers', 'customer_vouchers.voucher_id', '=', 'vouchers.id')
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
                     $query->where('vouchers.AgencyID', $User->id);
                 } else {
-                     $query->where(function ($q) use ($User) {
+                    $query->where(function ($q) use ($User) {
                         $q->where('vouchers.UserSysId', $User->id)
-                        ->orWhere('vouchers.store_id', $User->id);
+                            ->orWhere('vouchers.store_id', $User->id);
                     });
                 }
             })
@@ -205,7 +209,7 @@ class Vouchers extends Model
         )->leftJoin('stores', 'stores.id', '=', 'vouchers.store_id')
             ->where(function ($query) use ($User) {
                 $query->where('vouchers.AgencyID', $User->AgencyID)
-                ->where('vouchers.approval_status', 1);
+                    ->where('vouchers.approval_status', 1);
             })->where(function ($query) use ($program_id) {
                 // only vouchers tied to the customer's membership (program_id 0 = no membership -> none)
                 $query->whereExists(function ($q) use ($program_id) {
