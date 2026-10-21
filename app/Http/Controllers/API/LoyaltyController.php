@@ -1542,7 +1542,9 @@ class LoyaltyController extends Controller
                         $rootRow = LoyaltyReward::where('reward_id', $rootId)->where('AgencyID', $AgencyID)->first();
                         if ($rootRow) {
                             $preservedStatus = [
-                                'is_active' => $rootRow->is_active,
+                                'is_active' => in_array((int) $rootRow->approval_status, [0, 2], true)
+                                ? $rootRow->is_active
+                                : (int) $request->is_active,
                                 'approval_status' => $rootRow->approval_status,
                                 'reject_reason' => $rootRow->reject_reason,
                             ];
