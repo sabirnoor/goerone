@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\Controller;
+use App\Models\CustomerVoucher;
 use App\Models\incorporation_details;
 use App\Models\Invoices;
 use App\Models\invoices_items;
@@ -449,7 +450,9 @@ class LoyaltyController extends Controller
             }
 
             if (!empty($voucher_code)) {
-                app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
+                $dsdsds = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, ($request->order_amount - $discountCust), $accessToken->tokenable_id, null);
+                // pr(($request->order_amount - $discountCust));
+                // pr($dsdsds);
             }
             // pr($maxdiscountvalue);
             // pr($discount);
@@ -634,8 +637,10 @@ class LoyaltyController extends Controller
                             ]);
                         }
                     }
+                    $redm = [];
                     if (!empty($voucher_code)) {
-                        $validate = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $request->order_amount, $accessToken->tokenable_id, null);
+                        $validate = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, $BookingAmount, $accessToken->tokenable_id, null);
+
                         $payable = ($validate['payable'] ?? 0);
                         if ($payable > 0) {
                             $redm = app(VoucherRedeemService::class)->redeem(
@@ -645,7 +650,7 @@ class LoyaltyController extends Controller
                                 'CustomerUsed',
                                 $referneceNo
                             );
-                            $BookingAmount = ($BookingAmount - ($payable));
+                            $BookingAmount = (($payable));
                         }
                     }
                     $wallet = [
@@ -786,6 +791,7 @@ class LoyaltyController extends Controller
                                     'reward_id' => $request->reward_id,
                                     'StoreId' => $stores_id
                                 ],
+                                'voucher' => $redm ?? [],
                                 'mep' => $request->mep ?? 0,
                                 'rdm' => $request->rdm ?? 0,
                                 'ref' => $request->ref ?? null,
@@ -885,6 +891,10 @@ class LoyaltyController extends Controller
 
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
+
+            $UsedVoucher = CustomerVoucher::with('voucher')->where('AgencyID', $AgencyID)->where('used_ref', $referneceNo)
+                ->where('customer_id', $request->user()->id)->where('status', 'used')->first();
+
             $BalanceTemp = $this->rewardService->getCustomerNetBalanceTemp($request->user()->id, $AgencyID, $referneceNo);
             $Balance = $this->rewardService->getCRTranByReference($request->user(), $referneceNo, $AgencyID);
             $walletTransactions = WalletModel::from('wallet as w')->where('w.AgencyID', $AgencyID)
@@ -909,6 +919,8 @@ class LoyaltyController extends Controller
                 'rdm' => empty($ReddemPass) ? false : true,
                 'mep' => empty($checkUserCardExist) ? false : true,
                 'UserCard' => $checkUserCardExist,
+                'UsedVoucher' => ($UsedVoucher) ? true : false,
+                'VoucherAmount' => ($UsedVoucher->voucher->voucher_price ?? 0),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -1543,8 +1555,8 @@ class LoyaltyController extends Controller
                         if ($rootRow) {
                             $preservedStatus = [
                                 'is_active' => in_array((int) $rootRow->approval_status, [0, 2], true)
-                                ? $rootRow->is_active
-                                : (int) $request->is_active,
+                                    ? $rootRow->is_active
+                                    : (int) $request->is_active,
                                 'approval_status' => $rootRow->approval_status,
                                 'reject_reason' => $rootRow->reject_reason,
                             ];
