@@ -182,6 +182,17 @@ class VouchersController extends Controller
                                     })->first();
 
                                     if ($row) {
+                                        if ($row->used_status !== null) {
+                                            DB::rollBack();
+
+                                            return response()->json([
+                                                'status' => [
+                                                    'success' => false,
+                                                    'httpStatus' => 422,
+                                                ],
+                                                'message' => 'This voucher has been bought. You cannot edit it.',
+                                            ], 422);
+                                        }
                                         if ($approvalRequired) {
                                             // Store can deactivate an already-approved voucher immediately.
                                             if ((int) $row->approval_status === 1 && (int) $request->is_active === 0) {
