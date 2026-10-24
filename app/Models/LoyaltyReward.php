@@ -40,11 +40,8 @@ class LoyaltyReward extends Model
     /** null when the admin-only values are complete and valid, else the message to show. */
     public static function adminFieldsError($r): ?string
     {
-        if ((float) $r->rewardvalue <= 0) {
-            return 'Enter the Get Cashback value before approving.';
-        }
-        if ((float) $r->max_reward_value <= 0) {
-            return 'Enter the Maximum cashback value before approving.';
+        if ((float) $r->rewardvalue > 0 && (float) $r->max_reward_value <= 0) {
+            return 'Enter the Maximum cashback value when a cashback value is set.';
         }
         if (abs((float) $r->custvalue + (float) $r->ownervalue - 100) > 0.001) {
             return 'Customer discount and GoerOne discount must total 100% before approving.';
