@@ -136,3 +136,7 @@ ADD COLUMN `approval_status` TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '0=pend
 AFTER `is_active`;
 
 ALTER TABLE `reward` DROP COLUMN `is_reject`;
+
+ALTER TABLE `stores`
+ADD COLUMN `platform_fee` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `payment_enabled`,
+ADD COLUMN `platform_fee_payer` VARCHAR(20) NOT NULL DEFAULT 'store' AFTER `platform_fee`;

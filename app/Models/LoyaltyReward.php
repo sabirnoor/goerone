@@ -25,6 +25,41 @@ class LoyaltyReward extends Model
      * addreward() ever writes that column).
      * ------------------------------------------------------------------ */
 
+    /** Deal fields only admin can see/set on store-created rewards. */
+    public const ADMIN_ONLY_FIELDS = [
+        'rewardtype', 'rewardvalue', 'max_reward_value',
+        'custvalue', 'ownervalue', 'maxdiscount_slabs',
+    ];
+
+    /** What a store-created row holds until admin fills them in. */
+    public const ADMIN_FIELD_DEFAULTS = [
+        'rewardtype' => 0, 'rewardvalue' => 0, 'max_reward_value' => 0,
+        'custvalue' => 0, 'ownervalue' => 0, 'maxdiscount_slabs' => '[]',
+    ];
+
+    /** null when the admin-only values are complete and valid, else the message to show. */
+    public static function adminFieldsError($r): ?string
+    {
+        if ((float) $r->rewardvalue > 0 && (float) $r->max_reward_value <= 0) {
+            return 'Enter the Maximum cashback value when a cashback value is set.';
+        }
+        if (abs((float) $r->custvalue + (float) $r->ownervalue - 100) > 0.001) {
+            return 'Customer discount and GoerOne discount must total 100% before approving.';
+        }
+        [, $slabError] = self::normalizeSlabs($r->maxdiscount_slabs, (int) $r->dealtype, (float) $r->dealvalue);
+        return $slabError;
+    }
+
+    /** Copy admin-only values (raw DB values) onto the root row and all its program rows. */
+    public static function syncAdminFields($AgencyID, int $rootId, array $values): void
+    {
+        self::where('AgencyID', $AgencyID)
+            ->where(function ($q) use ($rootId) {
+                $q->where('reward_id', $rootId)->orWhere('parent_id', $rootId);
+            })
+            ->update(array_intersect_key($values, array_flip(self::ADMIN_ONLY_FIELDS)));
+    }
+
     /** Who is allowed to approve / reject. Store users never can. Change here only. */
     public static function canApprove($User): bool
     {
@@ -89,6 +124,14 @@ class LoyaltyReward extends Model
             $reward->approval_status = null;
         }
 
+        if ($isStoreViewer) {
+        $reward->makeHidden(self::ADMIN_ONLY_FIELDS);   // stores never receive these
+        } else {
+            $reward->admin_fields_missing = !empty($createdBy)
+                && (int) $reward->approval_status !== 1
+                && self::adminFieldsError($reward) !== null;
+        }
+
         return $reward;
     }
 
@@ -135,10 +178,8 @@ class LoyaltyReward extends Model
         // //     ->orderBy('reward.reward_id', 'DESC')
         // //     ->paginate($perPage);
 
-
         // 1️⃣ Get parent rewards (parent_id = 0)
-        // 1️⃣ Get parent rewards (parent_id = 0)
-        $rewards = LoyaltyReward::select(
+        $query = LoyaltyReward::select(
             'reward.*',
             DB::raw('DATE_FORMAT(reward.created_at, "%d %b, %Y") as createdDate'),
             'loyalty_program.program_name',
@@ -171,8 +212,35 @@ class LoyaltyReward extends Model
             })
             ->where('reward.parent_id', 0)
             ->groupBy('reward.reward_id')
-            ->orderBy('reward.reward_id', 'DESC')
-            ->paginate($perPage);
+            ->orderBy('reward.reward_id', 'DESC');
+            // ->paginate($perPage);
+            $storeCreated = function ($q) {
+            $q->select(DB::raw(1))
+                ->from('stores_mapping as smc')
+                ->whereColumn('smc.reward_id', 'reward.reward_id')
+                ->where('smc.isdelete', 0)
+                ->whereNotNull('smc.created_by_store');
+            };
+            $createdBy = $post['created_by'] ?? 'all';
+            $status    = $post['status'] ?? 'all';
+
+            if ($createdBy === 'store') {
+                $query->whereExists($storeCreated);
+            } elseif ($createdBy === 'admin') {
+                $query->whereNotExists($storeCreated);
+            }
+
+            $approval = ['pending' => 0, 'approved' => 1, 'rejected' => 2];
+            if (isset($approval[$status])) {
+                // approval states only exist for store-created rewards
+                $query->whereExists($storeCreated)->where('reward.approval_status', $approval[$status]);
+            } elseif ($status === 'active') {
+                $query->where('reward.is_active', 1);
+            } elseif ($status === 'inactive') {
+                $query->where('reward.is_active', 0);
+            }
+
+            $rewards = $query->paginate($perPage);
 
         // 2️⃣ Get all child programs for all these parent rewards in one query
         $parentIds = $rewards->pluck('reward_id')->toArray();
@@ -607,6 +675,25 @@ class LoyaltyReward extends Model
         $rootId = $row->parent_id > 0 ? $row->parent_id : $row->reward_id;
         if (!self::isStoreCreated($rootId)) {
             return [false, 'Only rewards created by a store need approval.'];
+        }
+
+        if ($approve) {
+        $root = LoyaltyReward::where('AgencyID', $AgencyID)->where('reward_id', $rootId)->first();
+        if (!$root) {
+            return [false, 'Reward not found.'];
+        }
+        if ($error = self::adminFieldsError($root)) {
+            return [false, $error];
+        }
+        // program rows must carry the same values as the root before they go live
+        self::syncAdminFields($AgencyID, $rootId, [
+            'rewardtype'        => $root->rewardtype,
+            'rewardvalue'       => $root->rewardvalue,
+            'max_reward_value'  => $root->max_reward_value,
+            'custvalue'         => $root->custvalue,
+            'ownervalue'        => $root->ownervalue,
+            'maxdiscount_slabs' => $root->getRawOriginal('maxdiscount_slabs'),
+        ]);
         }
 
         $data = $approve ? ['approval_status' => 1,'is_active' => 1,'reject_reason' => null,

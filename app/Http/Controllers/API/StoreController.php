@@ -200,6 +200,9 @@ class StoreController extends Controller
                     'is_halal' => 'nullable|boolean',
                     'alcohol_allowed' => 'nullable|boolean',
                     'food_type' => ['nullable', Rule::in(['veg', 'non_veg', 'both'])],
+                    // platform fee (percentage) – admin only, see below
+                    'platform_fee' => 'nullable|numeric|min:0|max:100',
+                    'platform_fee_payer' => ['nullable', Rule::in(['store', 'customer'])],
                 ];
 
                 if (!empty($storeId)) {
@@ -338,6 +341,18 @@ class StoreController extends Controller
                     // 'password'     => !empty($request->password) ? Hash::make($request->password) : Hash::make(Str::random(10)),
                     'updated_at'   => now(),
                 ];
+
+                // Platform fee: only admin (agency, UserType == 1) can set or change it.
+                // For store users the keys are left out, so update() keeps the stored values
+                // and create() uses the DB defaults.
+                if ($request->user()->UserType == 1) {
+                    $fee = $request->filled('platform_fee') ? (float) $request->platform_fee : 0;
+                    $storeData['platform_fee'] = $fee;
+                    $storeData['platform_fee_payer'] = $request->filled('platform_fee_payer')
+                        ? $request->platform_fee_payer
+                        : 'store';
+                }
+
                 $imagePath = null;
                 if ($request->hasFile('store_logo')) {
                     $image = $request->file('store_logo');
@@ -789,6 +804,8 @@ class StoreController extends Controller
             'is_halal'        => (bool) ($store->is_halal ?? false),
             'food_type'       => $store->food_type ?? null,
             'alcohol_allowed' => (bool) ($store->alcohol_allowed ?? false),
+            'platform_fee'       => (float) ($store->platform_fee ?? 0),
+            'platform_fee_payer' => $store->platform_fee_payer ?? 'store',
         ];
     }
 

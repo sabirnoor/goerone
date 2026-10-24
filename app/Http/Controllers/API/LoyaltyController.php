@@ -1073,7 +1073,7 @@ class LoyaltyController extends Controller
             if ($request->isMethod('post')) {
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
-                $result = LoyaltyReward::getloyaltyReward($user, $perPage);
+                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status']));
                 if ($user && $result) {
                     return response()->json([
                         'status' => [
@@ -1465,6 +1465,7 @@ class LoyaltyController extends Controller
                 $user = $request->user();
                 // pr($request->file('reward_logo'));
                 // die('ddd');
+                $adminRule = isset($user->UserType) ? 'required' : 'nullable';
                 $validator = Validator::make($request->all(), [
                     'program_id' => 'required',
                     // Store users are always mapped to their own store, so they don't send a store list.
@@ -1475,10 +1476,11 @@ class LoyaltyController extends Controller
                     // Reward deal values
                     'ordervalue' => 'required|numeric|gt:0',
                     'dealvalue' => 'required|numeric|gt:0',
-                    'custvalue' => 'required|numeric|min:0|max:100',
-                    'ownervalue' => 'required|numeric|min:0|max:100',
-                    'maxdiscount_slabs' => 'required',
+                    'custvalue'         => $adminRule . '|numeric|min:0|max:100',
+                    'ownervalue'        => $adminRule . '|numeric|min:0|max:100',
+                    'maxdiscount_slabs' => $adminRule,
                 ]);
+                $slabs = [];
                 if ($validator->fails()) {
                     $errors = json_encode($validator->messages());
                     $errorArray = [];
@@ -1498,6 +1500,9 @@ class LoyaltyController extends Controller
                     ]);
                 } else {
 
+                $isStoreUser = !isset($user->UserType);
+
+                if (!$isStoreUser) {
                     $customerValue = (float) $request->custvalue;
                     $ownerValue = (float) $request->ownervalue;
 
@@ -1507,7 +1512,7 @@ class LoyaltyController extends Controller
                                 'success' => false,
                                 'httpStatus' => 422,
                             ],
-                            'message' => 'Value for customer and Value for owner must total 100%.'
+                            'message' => 'Value for customer and Value for owner must total 100%.',
                         ]);
                     }
 
@@ -1516,13 +1521,20 @@ class LoyaltyController extends Controller
                         (int) $request->dealtype,
                         (float) $request->dealvalue
                     );
+
                     if ($slabError) {
                         DB::rollback();
+
                         return response()->json([
-                            'status' => ['success' => false, 'httpStatus' => 422],
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 422,
+                            ],
                             'message' => $slabError,
                         ]);
                     }
+                }
+                
 
                     $isStoreUser = !isset($user->UserType);
                     $AgencyID = isset($user->UserType) && $user->UserType == 1 ? $user->id : $user->AgencyID;
@@ -1593,6 +1605,13 @@ class LoyaltyController extends Controller
                                 'max_reward_value'    => isset($request->max_reward_value) ? (float)$request->max_reward_value : 0,
                             ];
                             if ($isStoreUser) {
+                                // Store users must never overwrite admin-controlled fields.
+                                $CreateData = array_diff_key(
+                                    $CreateData,
+                                    array_flip(LoyaltyReward::ADMIN_ONLY_FIELDS)
+                                );
+                            }
+                            if ($isStoreUser) {
                                 // New or edited store rewards require admin approval.
                                 $CreateData['approval_status'] = 0;
                                 $CreateData['is_active'] = 0;
@@ -1636,6 +1655,10 @@ class LoyaltyController extends Controller
                                         $CreateData['parent_id'] = ($parent_id > 0) ? $parent_id : $reward_id;
                                     } else {
                                         $CreateData['parent_id'] = $parentId;
+                                    }
+
+                                    if ($isStoreUser) {
+                                        $CreateData += LoyaltyReward::ADMIN_FIELD_DEFAULTS;
                                     }
                                     $insertGetId = LoyaltyReward::insertGetId($CreateData);
                                     if ($reward_id > 0) {
@@ -1764,6 +1787,17 @@ class LoyaltyController extends Controller
                                     'message' => 'Oops something went wrong',
                                 ]);
                             }
+                        }
+
+                        if (!$isStoreUser && $isStoreCreated) {
+                            LoyaltyReward::syncAdminFields($AgencyID, $rootId, [
+                                'rewardtype'        => (int) $request->rewardtype,
+                                'rewardvalue'       => (float) $request->rewardvalue,
+                                'max_reward_value'  => (float) $request->max_reward_value,
+                                'custvalue'         => (float) $request->custvalue,
+                                'ownervalue'        => (float) $request->ownervalue,
+                                'maxdiscount_slabs' => json_encode($slabs),
+                            ]);
                         }
 
                         if ($isStoreUser) {
