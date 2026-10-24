@@ -17,6 +17,7 @@ use Illuminate\Validation\Rule;
 use App\Http\Controllers\API\AuthController;
 use App\Helpers\Helper;
 use App\Models\Staticcities;
+use App\Models\StorePayment;
 use App\Models\User;
 
 class StoreController extends Controller
@@ -105,10 +106,10 @@ class StoreController extends Controller
                         } else {
                             $query->where(function ($q) use ($user) {
                                 $q->where('stores.UserSysId', $user->id)
-                                ->orWhere('stores.id', $user->id);
+                                    ->orWhere('stores.id', $user->id);
                             });
                         }
-                        })->where(function ($query) use ($keyword) {
+                    })->where(function ($query) use ($keyword) {
                         if ($keyword !== "null" && !empty(trim($keyword))) {
                             $query->where('stores.store_name', "like", "%" . $keyword . "%");
                             $query->orWhere('stores.address', "like", "%" . $keyword . "%");
@@ -379,15 +380,20 @@ class StoreController extends Controller
                     $UserSysId = $isAgency ? $user->id : $user->AgencyID;
                     if (!$existingStore) {
                         return response()->json([
-                            'status' => [ 'success' => false,
-                            'httpStatus' => 404, ], 'message' => 'Store not found.',], 404);}
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 404,
+                            ],
+                            'message' => 'Store not found.',
+                        ], 404);
+                    }
 
                     $isOwner = $user->UserType == 1 ? $existingStore->AgencyID == $user->id
-                    : ($existingStore->UserSysId == $user->id || $existingStore->id == $user->id);
+                        : ($existingStore->UserSysId == $user->id || $existingStore->id == $user->id);
 
                     if (!$isOwner) {
                         return response()->json([
-                            'status' => [ 'success' => false,'httpStatus' => 403],
+                            'status' => ['success' => false, 'httpStatus' => 403],
                             'message' => 'You are not authorized to update this store.',
                         ], 403);
                     }
@@ -456,57 +462,57 @@ class StoreController extends Controller
         }
     }
 
-private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
-private const NO_CATEGORY_MESSAGE = "Sorry, we currently don't have any stores available in this category in your area.";
-/**
- * Location-based store search.
- *
- * - Latitude and longitude are mandatory.
- * - Radius is optional and defaults to 50 KM.
- * - Category is optional.
- * - Results are sorted by nearest distance.
- * - Uses bounding box + Haversine for performance and accuracy.
- */
-public function search(Request $request)
-{
-    try {
-        $rules = [
-            'lat'      => 'required|numeric|between:-90,90',
-            'lon'      => 'required|numeric|between:-180,180',
-            'radius'   => 'nullable|numeric|min:0.1|max:100',
-            'category' => 'nullable|string|max:191',
-            'limit'    => 'nullable|integer|min:1|max:50',
-            'offset'   => 'nullable|integer|min:0',
-        ];
+    private const NO_SERVICE_MESSAGE = "Sorry, we don't currently provide our service in this area.";
+    private const NO_CATEGORY_MESSAGE = "Sorry, we currently don't have any stores available in this category in your area.";
+    /**
+     * Location-based store search.
+     *
+     * - Latitude and longitude are mandatory.
+     * - Radius is optional and defaults to 50 KM.
+     * - Category is optional.
+     * - Results are sorted by nearest distance.
+     * - Uses bounding box + Haversine for performance and accuracy.
+     */
+    public function search(Request $request)
+    {
+        try {
+            $rules = [
+                'lat'      => 'required|numeric|between:-90,90',
+                'lon'      => 'required|numeric|between:-180,180',
+                'radius'   => 'nullable|numeric|min:0.1|max:100',
+                'category' => 'nullable|string|max:191',
+                'limit'    => 'nullable|integer|min:1|max:50',
+                'offset'   => 'nullable|integer|min:0',
+            ];
 
-        $validator = Validator::make($request->all(),$rules);
+            $validator = Validator::make($request->all(), $rules);
 
-        if ($validator->fails()) {
-            return $this->jsonError(
-                $validator->errors()->first(),
-                422
-            );
-        }
+            if ($validator->fails()) {
+                return $this->jsonError(
+                    $validator->errors()->first(),
+                    422
+                );
+            }
 
-        $lat = (float) $request->lat;
-        $lon = (float) $request->lon;
+            $lat = (float) $request->lat;
+            $lon = (float) $request->lon;
 
-        // If radius is not passed, default to 50 KM.
-        $radius = $request->filled('radius') ? (float) $request->radius: 50;
+            // If radius is not passed, default to 50 KM.
+            $radius = $request->filled('radius') ? (float) $request->radius : 50;
 
-        $category = trim($request->category ?? '');
+            $category = trim($request->category ?? '');
 
-        $limit = (int) ( $request->limit ?? 15);
+            $limit = (int) ($request->limit ?? 15);
 
-        $offset = (int) ( $request->offset ?? 0);
+            $offset = (int) ($request->offset ?? 0);
 
-        $user = $request->user();
+            $user = $request->user();
 
-        $AgencyID = $user->UserType == 1
-            ? $user->id
-            : $user->AgencyID;
+            $AgencyID = $user->UserType == 1
+                ? $user->id
+                : $user->AgencyID;
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Bounding Box
          * ---------------------------------------------------------
@@ -515,62 +521,64 @@ public function search(Request $request)
          * The actual radius is still checked using Haversine below.
          */
 
-        $latDelta = $radius / 111.0;
-        $cosLat = max( abs(cos(deg2rad($lat))), 0.000001);
-        $lonDelta = $radius / (111.0 * $cosLat);
-        $minLat = max( -90, $lat - $latDelta );
-        $maxLat = min(90, $lat + $latDelta);
-        $minLon = $lon - $lonDelta;
-        $maxLon = $lon + $lonDelta;
+            $latDelta = $radius / 111.0;
+            $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
+            $lonDelta = $radius / (111.0 * $cosLat);
+            $minLat = max(-90, $lat - $latDelta);
+            $maxLat = min(90, $lat + $latDelta);
+            $minLon = $lon - $lonDelta;
+            $maxLon = $lon + $lonDelta;
 
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Base Query
          * ---------------------------------------------------------
          */
 
-        $query = Store::query()
-            ->select([
-                'stores.id',
-                'stores.store_name',
-                'stores.store_logo',
-                'stores.address',
-                'stores.description',
-                'stores.vendor_category',
-                'stores.lat',
-                'stores.lon',
-                'stores.placeId',
-                'stores.city',
-                'stores.is_halal',
-                'stores.food_type',
-                'stores.alcohol_allowed',
-            ])
-            ->whereNotNull('stores.lat')
-            ->whereNotNull('stores.lon')
-            ->where('stores.AgencyID',$AgencyID)
-            ->whereBetween('stores.lat',[$minLat, $maxLat])
-            ->whereBetween('stores.lon',[ $minLon,$maxLon]);
+            $query = Store::query()
+                ->select([
+                    'stores.id',
+                    'stores.store_name',
+                    'stores.store_logo',
+                    'stores.address',
+                    'stores.description',
+                    'stores.vendor_category',
+                    'stores.lat',
+                    'stores.lon',
+                    'stores.placeId',
+                    'stores.city',
+                    'stores.is_halal',
+                    'stores.food_type',
+                    'stores.alcohol_allowed',
+                ])
+                ->whereNotNull('stores.lat')
+                ->whereNotNull('stores.lon')
+                ->where('stores.AgencyID', $AgencyID)
+                ->whereBetween('stores.lat', [$minLat, $maxLat])
+                ->whereBetween('stores.lon', [$minLon, $maxLon]);
 
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Category Filter
          * ---------------------------------------------------------
          */
 
-        if ($category !== '') {$query->where('stores.vendor_category',$category); }
+            if ($category !== '') {
+                $query->where('stores.vendor_category', $category);
+            }
 
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Exact Haversine Distance
          * ---------------------------------------------------------
          *
          * Distance is returned as distance_km.
          */
-        $query->selectRaw($this->haversineExpression( 'stores.lat', 'stores.lon' ),[$lat,$lon,$lat]);
-        /*
+            $query->selectRaw($this->haversineExpression('stores.lat', 'stores.lon'), [$lat, $lon, $lat]);
+            /*
          * ---------------------------------------------------------
          * Exact Radius Filter
          * ---------------------------------------------------------
@@ -579,8 +587,8 @@ public function search(Request $request)
          * This ensures stores are actually within
          * the requested radius.
          */
-        $query->having('distance_km','<=', $radius );
-        /*
+            $query->having('distance_km', '<=', $radius);
+            /*
          * ---------------------------------------------------------
          * Sorting
          * ---------------------------------------------------------
@@ -589,29 +597,29 @@ public function search(Request $request)
          * ID provides stable ordering when distances are equal.
          */
 
-        $query->orderBy('distance_km','asc')->orderBy('stores.id','asc');
-        /*
+            $query->orderBy('distance_km', 'asc')->orderBy('stores.id', 'asc');
+            /*
          * ---------------------------------------------------------
          * Pagination
          * ---------------------------------------------------------
          */
 
-        $rows = $query->offset($offset)->limit($limit + 1)->get();
-        $hasMore = $rows->count() > $limit;
+            $rows = $query->offset($offset)->limit($limit + 1)->get();
+            $hasMore = $rows->count() > $limit;
 
-        if ($hasMore) {
-            $rows = $rows->take($limit);
-        }
+            if ($hasMore) {
+                $rows = $rows->take($limit);
+            }
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Categories
          * ---------------------------------------------------------
          */
 
-        $categories = collect( self::VENDOR_CATEGORIES )->values();
+            $categories = collect(self::VENDOR_CATEGORIES)->values();
 
-      /*
+            /*
         * ---------------------------------------------------------
         * No Stores Found
         * ---------------------------------------------------------
@@ -622,145 +630,145 @@ public function search(Request $request)
         * Only show the message on the first page.
         */
 
-    if ($rows->isEmpty() && $offset === 0) {
-        $message = $category !== '' ? self::NO_CATEGORY_MESSAGE: self::NO_SERVICE_MESSAGE;
+            if ($rows->isEmpty() && $offset === 0) {
+                $message = $category !== '' ? self::NO_CATEGORY_MESSAGE : self::NO_SERVICE_MESSAGE;
 
-        return $this->jsonSuccess(
-            $message,
-            [
-                'items' => [],
-                'nextOffset' => null,
-                'radiusKm' => $radius,
-                'categories' => $categories,
-            ]
-        );
-    }
+                return $this->jsonSuccess(
+                    $message,
+                    [
+                        'items' => [],
+                        'nextOffset' => null,
+                        'radiusKm' => $radius,
+                        'categories' => $categories,
+                    ]
+                );
+            }
 
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Rewards
          * ---------------------------------------------------------
          */
 
-        $rewardMap = LoyaltyReward::getBestRewardsForStores(
-            $rows->pluck('id')->toArray(),
-            $AgencyID
-        );
+            $rewardMap = LoyaltyReward::getBestRewardsForStores(
+                $rows->pluck('id')->toArray(),
+                $AgencyID
+            );
 
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Format Stores
          * ---------------------------------------------------------
          */
 
-        $items = $rows->map(fn ($store) => $this->formatStore( $store,false, $rewardMap))->values();
+            $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
 
-        /*
+            /*
          * ---------------------------------------------------------
          * Response
          * ---------------------------------------------------------
          */
 
-        return $this->jsonSuccess(
-            'Stores fetched successfully.',
-            [
-                'items' => $items,
-                'nextOffset' => $hasMore? $offset + $limit: null,
-                'radiusKm' => $radius,
-                'categories' => $categories,
-            ]
-        );
-
-    } catch (\Throwable $th) {
-        return $this->jsonError(
-            $th->getMessage()
-        );
+            return $this->jsonSuccess(
+                'Stores fetched successfully.',
+                [
+                    'items' => $items,
+                    'nextOffset' => $hasMore ? $offset + $limit : null,
+                    'radiusKm' => $radius,
+                    'categories' => $categories,
+                ]
+            );
+        } catch (\Throwable $th) {
+            return $this->jsonError(
+                $th->getMessage()
+            );
+        }
     }
-}
 
-/**
- * Shared Haversine SQL fragment (used by both discover's optional distance
- * calc and nearby's radius filter). Bindings order is always [lat, lon, lat].
- */
-private function haversineExpression(string $latColumn = 'lat', string $lonColumn = 'lon'): string
-{
-    return "(6371 * acos(
+    /**
+     * Shared Haversine SQL fragment (used by both discover's optional distance
+     * calc and nearby's radius filter). Bindings order is always [lat, lon, lat].
+     */
+    private function haversineExpression(string $latColumn = 'lat', string $lonColumn = 'lon'): string
+    {
+        return "(6371 * acos(
         LEAST(1, GREATEST(-1,
             cos(radians(?)) * cos(radians({$latColumn})) * cos(radians({$lonColumn}) - radians(?))
             + sin(radians(?)) * sin(radians({$latColumn}))
         ))
     )) AS distance_km";
-}
+    }
 
-private function jsonSuccess(string $message, array $data, int $status = 200)
-{
-    return response()->json([
-        'status'  => ['success' => true, 'httpStatus' => $status],
-        'message' => $message,
-        'data'    => $data,
-    ]);
-}
+    private function jsonSuccess(string $message, array $data, int $status = 200)
+    {
+        return response()->json([
+            'status'  => ['success' => true, 'httpStatus' => $status],
+            'message' => $message,
+            'data'    => $data,
+        ]);
+    }
 
-private function jsonError(string $message, int $status = 500)
-{
-    return response()->json([
-        'status'  => ['success' => false, 'httpStatus' => $status],
-        'message' => $message,
-    ]);
-}
+    private function jsonError(string $message, int $status = 500)
+    {
+        return response()->json([
+            'status'  => ['success' => false, 'httpStatus' => $status],
+            'message' => $message,
+        ]);
+    }
     /**
      * Common store response formatter.
      */
-    private function formatStore($store,bool $discover = false, $rewardMap = null): array {
+    private function formatStore($store, bool $discover = false, $rewardMap = null): array
+    {
         $address = $store->address;
-    /*
+        /*
     |--------------------------------------------------------------------------
     | Discover address fallback
     |--------------------------------------------------------------------------
     */
-    if ($discover) {
+        if ($discover) {
 
-        $trimmedAddress = trim((string) $address);
-        if ($address === null || $trimmedAddress === '' || strtolower($trimmedAddress) === 'null') {
-            $address = $store->cityName;
+            $trimmedAddress = trim((string) $address);
+            if ($address === null || $trimmedAddress === '' || strtolower($trimmedAddress) === 'null') {
+                $address = $store->cityName;
             }
         }
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | Best reward for this store (if any)
     |--------------------------------------------------------------------------
     */
 
-    $reward = $rewardMap ? $rewardMap->get($store->id) : null;
-    $discount = null;
+        $reward = $rewardMap ? $rewardMap->get($store->id) : null;
+        $discount = null;
 
-   if ($reward) {
-    $slabs = $reward->maxdiscount_slabs ?? null;
-    if (is_string($slabs)) {
-        $slabs = json_decode($slabs, true); // raw DB row → JSON string; model with $casts → already an array
-    }
+        if ($reward) {
+            $slabs = $reward->maxdiscount_slabs ?? null;
+            if (is_string($slabs)) {
+                $slabs = json_decode($slabs, true); // raw DB row → JSON string; model with $casts → already an array
+            }
 
-    // A reward without slabs is incomplete → no discount is shown for it
-    if (is_array($slabs) && !empty($slabs)) {
-        $discount = [
-            'rewardId'          => $reward->reward_id,
-            'dealType'          => (int) $reward->dealtype,   // 0 = percentage, 1 = fixed amount
-            'dealValue'         => (float) $reward->dealvalue,
-            'rewardType'        => (int) $reward->rewardtype, // 0 = percentage, 1 = fixed amount
-            'rewardValue'       => (float) $reward->rewardvalue,
-            'minOrderValue'     => (float) $reward->ordervalue,
-            'startDate'         => $reward->start_date,
-            'endDate'           => $reward->end_date,
-            'maxdiscount_slabs' => array_values($slabs),      // [{from, to, max_discount}, ...]
-            'custvalue'         => (float) $reward->custvalue,
-            'ownervalue'        => (float) $reward->ownervalue,
-            'max_reward_value'  => (float) $reward->max_reward_value,
-        ];
-    }
-}
+            // A reward without slabs is incomplete → no discount is shown for it
+            if (is_array($slabs) && !empty($slabs)) {
+                $discount = [
+                    'rewardId'          => $reward->reward_id,
+                    'dealType'          => (int) $reward->dealtype,   // 0 = percentage, 1 = fixed amount
+                    'dealValue'         => (float) $reward->dealvalue,
+                    'rewardType'        => (int) $reward->rewardtype, // 0 = percentage, 1 = fixed amount
+                    'rewardValue'       => (float) $reward->rewardvalue,
+                    'minOrderValue'     => (float) $reward->ordervalue,
+                    'startDate'         => $reward->start_date,
+                    'endDate'           => $reward->end_date,
+                    'maxdiscount_slabs' => array_values($slabs),      // [{from, to, max_discount}, ...]
+                    'custvalue'         => (float) $reward->custvalue,
+                    'ownervalue'        => (float) $reward->ownervalue,
+                    'max_reward_value'  => (float) $reward->max_reward_value,
+                ];
+            }
+        }
 
         return [
             'id'          => $store->id,
@@ -774,7 +782,7 @@ private function jsonError(string $message, int $status = 500)
             'placeId'     => $store->placeId,
             'distanceKm' => isset($store->distance_km)
                 && $store->distance_km !== null
-                ? round((float) $store->distance_km, 2): null,
+                ? round((float) $store->distance_km, 2) : null,
             'rating'      => null,
             'reviewCount' => 0,
             'discount'    => $discount,
@@ -782,5 +790,86 @@ private function jsonError(string $message, int $status = 500)
             'food_type'       => $store->food_type ?? null,
             'alcohol_allowed' => (bool) ($store->alcohol_allowed ?? false),
         ];
+    }
+
+    public function createQr(Request $request)
+    {
+        $data = $request->validate([
+            'store_id' => 'required|exists:stores,id',
+            'amount'   => 'required|numeric|min:1',
+            'reference'   => 'required',
+        ]);
+
+        $now = now();
+
+        $payment = StorePayment::create([
+            'AgencyID'        => $request->user()->AgencyID,
+            'UserSysId'        => $request->user()->id,
+            'store_id'        => $data['store_id'],
+            'reference'       => $data['reference'] ?? strtoupper(Str::random(8)),
+            'amount'          => $data['amount'],
+            'status'          => 'pending',
+            'qr_generated_at' => $now,
+            'expires_at'      => $now->copy()->addMinutes(5),
+        ]);
+
+        $qrPayload = [
+            'sid' => $payment->store_id,
+            'amt' => (float) $payment->amount,
+            'tm'  => $now->getTimestampMs(),
+            'ref' => $payment->reference,
+        ];
+
+        // generate QR from $qrPayload exactly as you do now
+        return response()->json(['payment' => $payment, 'qr' => $qrPayload]);
+    }
+    public function initiate(Request $request)
+    {
+
+        $request->validate(['reference' => 'required|string']);
+
+        return DB::transaction(function () use ($request) {
+            $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
+            $payment = StorePayment::where('reference', $request->reference)->where('AgencyID', $AgencyID)
+                ->lockForUpdate()->firstOrFail();
+
+            if ($payment->status === 'success') {
+                return response()->json(
+                    [
+                        'status'  => ['success' => false, 'httpStatus' => 409],
+                        'message' => 'Already paid'
+                    ],
+                );
+            }
+
+            if ($payment->expires_at && $payment->expires_at->isPast()) {
+                $payment->update(['status' => 'expired']);
+                return response()->json(
+                    [
+                        'status'  => ['success' => false, 'httpStatus' => 410],
+                        'message' => 'QR expired'
+                    ],
+
+                );
+            }
+
+            $payment->update([
+                'status'       => 'initiated',
+                'customer_id'       => $request->user()->id,
+                'initiated_at' => now(),
+            ]);
+
+            // Call your gateway here using $payment->amount (from DB, not from QR).
+            // Pass $payment->reference as your merchant transaction ID so the
+            // callback can map back to this row.
+            // $gatewayUrl = $this->gateway->createOrder($payment);
+
+            return response()->json([
+                'status'  => ['success' => true, 'httpStatus' => 200],
+                'reference' => $payment->reference,
+                'amount'    => $payment->amount,
+                // 'redirect_url' => $gatewayUrl,
+            ]);
+        });
     }
 }
