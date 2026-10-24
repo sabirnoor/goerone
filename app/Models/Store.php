@@ -24,7 +24,9 @@ class Store extends Authenticatable
         'is_halal',
         'food_type',
         'alcohol_allowed',
-        'updated_by_store'
+        'updated_by_store',
+        'platform_fee',
+        'platform_fee_payer',
     ];
 
     protected $hidden = [
@@ -39,6 +41,7 @@ class Store extends Authenticatable
         'payment_enabled' => 'boolean',
         'is_halal' => 'boolean',
         'alcohol_allowed' => 'boolean',
+        'platform_fee' => 'float',
     ];
 
     public function settlements()
