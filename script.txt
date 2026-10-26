@@ -140,3 +140,13 @@ ALTER TABLE `reward` DROP COLUMN `is_reject`;
 ALTER TABLE `stores`
 ADD COLUMN `platform_fee` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `payment_enabled`,
 ADD COLUMN `platform_fee_payer` VARCHAR(20) NOT NULL DEFAULT 'store' AFTER `platform_fee`;
+
+ALTER TABLE `reward`
+  ADD COLUMN `discount_enabled` TINYINT(1) NULL DEFAULT NULL
+      COMMENT '0=GoerOne,1=Store,2=Both' AFTER `ordervalue`,
+  ADD COLUMN `goerone_discount_type` SMALLINT(2) NOT NULL DEFAULT 0
+      COMMENT '0=percentage,1=fixed' AFTER `discount_enabled`,
+  ADD COLUMN `store_disc_type` SMALLINT(2) NOT NULL DEFAULT 0
+      COMMENT '0=percentage,1=fixed' AFTER `goerone_discount_type`,
+  ADD COLUMN `store_disc_value` FLOAT NOT NULL DEFAULT 0 AFTER `store_disc_type`,
+  ADD COLUMN `store_maxdiscount_slabs` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER `maxdiscount_slabs`;

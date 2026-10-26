@@ -15,6 +15,7 @@ class LoyaltyReward extends Model
 
     protected $casts = [
     'maxdiscount_slabs' => 'array',
+    'store_maxdiscount_slabs' => 'array',
     ];
 
     /* ------------------------------------------------------------------
@@ -28,14 +29,43 @@ class LoyaltyReward extends Model
     /** Deal fields only admin can see/set on store-created rewards. */
     public const ADMIN_ONLY_FIELDS = [
         'rewardtype', 'rewardvalue', 'max_reward_value',
-        'custvalue', 'ownervalue', 'maxdiscount_slabs',
+        'custvalue', 'ownervalue', 'maxdiscount_slabs', 'goerone_discount_type',
     ];
 
     /** What a store-created row holds until admin fills them in. */
     public const ADMIN_FIELD_DEFAULTS = [
         'rewardtype' => 0, 'rewardvalue' => 0, 'max_reward_value' => 0,
-        'custvalue' => 0, 'ownervalue' => 0, 'maxdiscount_slabs' => '[]',
+        'custvalue' => 0, 'ownervalue' => 0, 'maxdiscount_slabs' => '[]', 'goerone_discount_type' => 0,
     ];
+
+    /**
+     * reward.discount_enabled (one column instead of two flags):
+     *   0 = GoerOne, 1 = Store, 2 = Both, NULL = no customer discount (cashback only).
+     */
+    public const DISCOUNT_GOERONE = 0;
+    public const DISCOUNT_STORE   = 1;
+    public const DISCOUNT_BOTH    = 2;
+
+    public static function goeroneEnabled($value): bool
+    {
+        return $value !== null && $value !== '' && in_array((int) $value, [self::DISCOUNT_GOERONE, self::DISCOUNT_BOTH], true);
+    }
+
+    public static function storeEnabled($value): bool
+    {
+        return $value !== null && $value !== '' && in_array((int) $value, [self::DISCOUNT_STORE, self::DISCOUNT_BOTH], true);
+    }
+
+    public static function buildDiscountEnabled(bool $goerone, bool $store): ?int
+    {
+        if ($goerone && $store) {
+            return self::DISCOUNT_BOTH;
+        }
+        if ($goerone) {
+            return self::DISCOUNT_GOERONE;
+        }
+        return $store ? self::DISCOUNT_STORE : null;
+    }
 
     /** null when the admin-only values are complete and valid, else the message to show. */
     public static function adminFieldsError($r): ?string
@@ -43,10 +73,20 @@ class LoyaltyReward extends Model
         if ((float) $r->rewardvalue > 0 && (float) $r->max_reward_value <= 0) {
             return 'Enter the Maximum cashback value when a cashback value is set.';
         }
-        if (abs((float) $r->custvalue + (float) $r->ownervalue - 100) > 0.001) {
-            return 'Customer discount and GoerOne discount must total 100% before approving.';
+        if (!self::goeroneEnabled($r->discount_enabled)) {
+            if (!self::storeEnabled($r->discount_enabled) && (float) $r->rewardvalue <= 0) {
+                return 'Enable at least one customer discount (GoerOne or Store) or set a cashback value before approving.';
+            }
+            return null; // GoerOne discount is off, so there is nothing else for admin to fill
         }
-        [, $slabError] = self::normalizeSlabs($r->maxdiscount_slabs, (int) $r->dealtype, (float) $r->dealvalue);
+        $cust = (float) $r->custvalue;
+        $type = (int) $r->goerone_discount_type;   // 0 = percentage, 1 = fixed
+        if ($cust <= 0 || ($type === 0 && $cust > 100)) {
+            return $type === 0
+                ? 'Enter the GoerOne customer discount (between 1% and 100%) before approving.'
+                : 'Enter the GoerOne customer discount amount before approving.';
+        }
+        [, $slabError] = self::normalizeSlabs($r->maxdiscount_slabs, $type, $cust);
         return $slabError;
     }
 
@@ -57,7 +97,7 @@ class LoyaltyReward extends Model
             ->where(function ($q) use ($rootId) {
                 $q->where('reward_id', $rootId)->orWhere('parent_id', $rootId);
             })
-            ->update(array_intersect_key($values, array_flip(self::ADMIN_ONLY_FIELDS)));
+            ->update(array_intersect_key($values, array_flip(array_merge(self::ADMIN_ONLY_FIELDS, ['discount_enabled']))));
     }
 
     /** Who is allowed to approve / reject. Store users never can. Change here only. */
@@ -692,6 +732,8 @@ class LoyaltyReward extends Model
             'max_reward_value'  => $root->max_reward_value,
             'custvalue'         => $root->custvalue,
             'ownervalue'        => $root->ownervalue,
+            'discount_enabled'  => $root->discount_enabled,
+            'goerone_discount_type' => $root->goerone_discount_type,
             'maxdiscount_slabs' => $root->getRawOriginal('maxdiscount_slabs'),
         ]);
         }
