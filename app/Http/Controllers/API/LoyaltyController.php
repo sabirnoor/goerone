@@ -18,6 +18,7 @@ use App\Models\mst_items;
 use App\Models\mst_markups;
 use App\Models\RewardEarn;
 use App\Models\Store;
+use App\Models\StorePayment;
 use App\Models\StoresMapping;
 use DateTime;
 use App\Models\Vouchers;
@@ -63,6 +64,38 @@ class LoyaltyController extends Controller
         }
 
         return 0;
+    }
+    public function StorePaymentcallback(Request $request)
+    {
+        $ref = $request->input('ref'); // map to your gateway's field name
+
+        DB::transaction(function () use ($request, $ref) {
+            $payment = StorePayment::where('reference', $ref)->lockForUpdate()->first();
+
+            if (!$payment || $payment->status === 'success') {
+                return; // unknown ref or duplicate callback (idempotent)
+            }
+
+            // 2. Verify amount matches what we stored
+            $paidAmount = (float) $request->input('amount');
+            if (abs($paidAmount - (float) $payment->amount) > 0.01) {
+                $payment->update([
+                    'status' => 'failed',
+                    'gateway_response' => $request->all(),
+                ]);
+                return;
+            }
+
+            $isSuccess = $request->input('status') === 'SUCCESS'; // map to gateway's value
+
+            $payment->update([
+                'status'           => $isSuccess ? 'success' : 'failed',
+                'gateway_txn_id'   => $request->input('gateway_txn_id'),
+                'payment_method'   => $request->input('method'),
+                'gateway_response' => $request->all(),
+                'paid_at'          => $isSuccess ? now() : null,
+            ]);
+        });
     }
     public function redeemReward(Request $request)
     {
@@ -463,6 +496,7 @@ class LoyaltyController extends Controller
             $request->merge(['discount' => $discount]);
             $request->merge(['user_id' => $request->user()->id]);
             $request->merge(['card_id' => $card_id]);
+            $request->merge(['status' => 'SUCCESS']);
             $accessToken->load(['tokenable' => function ($query) {
                 $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired'); // Add store fields
             }]);
@@ -676,6 +710,7 @@ class LoyaltyController extends Controller
                         ]);
                     }
                     if (empty($checkReward)) {
+                        $this->StorePaymentcallback($request);
                         DB::commit();
                         return response()->json([
                             'status' => [
@@ -777,7 +812,7 @@ class LoyaltyController extends Controller
                                 ];
                                 $this->rewardService->addPointsTemp($RewardInsert);
                             }
-
+                            $this->StorePaymentcallback($request);
                             return response()->json([
                                 'status' => [
                                     'success' => true,
@@ -1500,41 +1535,41 @@ class LoyaltyController extends Controller
                     ]);
                 } else {
 
-                $isStoreUser = !isset($user->UserType);
+                    $isStoreUser = !isset($user->UserType);
 
-                if (!$isStoreUser) {
-                    $customerValue = (float) $request->custvalue;
-                    $ownerValue = (float) $request->ownervalue;
+                    if (!$isStoreUser) {
+                        $customerValue = (float) $request->custvalue;
+                        $ownerValue = (float) $request->ownervalue;
 
-                    if (($customerValue + $ownerValue) != 100) {
-                        return response()->json([
-                            'status' => [
-                                'success' => false,
-                                'httpStatus' => 422,
-                            ],
-                            'message' => 'Value for customer and Value for owner must total 100%.',
-                        ]);
+                        if (($customerValue + $ownerValue) != 100) {
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 422,
+                                ],
+                                'message' => 'Value for customer and Value for owner must total 100%.',
+                            ]);
+                        }
+
+                        [$slabs, $slabError] = LoyaltyReward::normalizeSlabs(
+                            $request->maxdiscount_slabs,
+                            (int) $request->dealtype,
+                            (float) $request->dealvalue
+                        );
+
+                        if ($slabError) {
+                            DB::rollback();
+
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 422,
+                                ],
+                                'message' => $slabError,
+                            ]);
+                        }
                     }
 
-                    [$slabs, $slabError] = LoyaltyReward::normalizeSlabs(
-                        $request->maxdiscount_slabs,
-                        (int) $request->dealtype,
-                        (float) $request->dealvalue
-                    );
-
-                    if ($slabError) {
-                        DB::rollback();
-
-                        return response()->json([
-                            'status' => [
-                                'success' => false,
-                                'httpStatus' => 422,
-                            ],
-                            'message' => $slabError,
-                        ]);
-                    }
-                }
-                
 
                     $isStoreUser = !isset($user->UserType);
                     $AgencyID = isset($user->UserType) && $user->UserType == 1 ? $user->id : $user->AgencyID;
