@@ -19,6 +19,7 @@ use App\Http\Controllers\VoucherCheckoutController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WalletController;
 use App\Models\Service;
+use App\Models\StorePayment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -72,7 +73,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('reward-approval-list', [LoyaltyController::class, 'rewardApprovalList']);
         Route::post('reward-approve', [LoyaltyController::class, 'approveReward']);
         Route::post('reward-reject', [LoyaltyController::class, 'rejectReward']);
-        Route::post('/rewards/deactivate',[LoyaltyController::class, 'deactivateReward']);
+        Route::post('/rewards/deactivate', [LoyaltyController::class, 'deactivateReward']);
 
         //Route::post('validateusercard', [LoyaltyController::class, 'validateusercard']);
         Route::post('membership', [MembershipController::class, 'membershipList']);
@@ -174,6 +175,13 @@ Route::middleware('apiKey')->group(function () {
     Route::post('/reward/reward-ledger', [WalletController::class, 'RewardLedger']);
     Route::post('/reward/reward-ledger-temp', [WalletController::class, 'RewardLedgerTemp']);
     Route::post('/reward/temp-reward-processed', [WalletController::class, 'TempRewardProcessed']);
+
+    Route::post('/store-pay/create', [StoreController::class, 'createQr']);
+    Route::post('/store-pay/initiate', [StoreController::class, 'initiate']);
+    Route::get('/store-pay/status/{ref}', function ($ref) {
+        $p = StorePayment::where('reference', $ref)->firstOrFail();
+        return ['status' => $p->status, 'paid_at' => $p->paid_at];
+    });
 });
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
