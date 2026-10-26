@@ -77,7 +77,7 @@ class LoyaltyController extends Controller
             }
 
             // 2. Verify amount matches what we stored
-            $paidAmount = (float) $request->input('amount');
+            $paidAmount = (float) $request->input('order_amount');
             if (abs($paidAmount - (float) $payment->amount) > 0.01) {
                 $payment->update([
                     'status' => 'failed',
