@@ -1591,7 +1591,7 @@ class LoyaltyController extends Controller
                     return $fail('Enable at least one customer discount (GoerOne or Store) or set a cashback value.');
                 }
 
-                if ($storeOn) {
+                if ($storeOn && $isStoreUser) {
                     $storeDiscType = (int) $request->store_disc_type === 1 ? 1 : 0;
                     $storeDiscValue = (float) $request->store_disc_value;
                     if ($storeDiscValue <= 0) {
@@ -1700,6 +1700,10 @@ class LoyaltyController extends Controller
                                     $CreateData,
                                     array_flip(LoyaltyReward::ADMIN_ONLY_FIELDS)
                                 );
+                            } else {
+                                $CreateData = array_diff_key($CreateData, array_flip([
+                                    'store_disc_type', 'store_disc_value', 'store_maxdiscount_slabs',
+                                ]));
                             }
                             if ($isStoreUser) {
                                 // New or edited store rewards require admin approval.
