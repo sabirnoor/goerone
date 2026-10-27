@@ -765,6 +765,14 @@ class StoreController extends Controller
             if (is_string($slabs)) {
                 $slabs = json_decode($slabs, true); // raw DB row → JSON string; model with $casts → already an array
             }
+            // Store discount slabs (same decoding as the GoerOne slabs)
+            $storeSlabs = $reward->store_maxdiscount_slabs;
+            if (is_string($storeSlabs)) {
+                $storeSlabs = json_decode($storeSlabs, true);
+            }
+
+            $hasGoeroneSlabs = is_array($slabs) && !empty($slabs);
+            $hasStoreSlabs   = is_array($storeSlabs) && !empty($storeSlabs);
 
             // A reward without slabs is incomplete → no discount is shown for it
             if (is_array($slabs) && !empty($slabs)) {
@@ -777,10 +785,18 @@ class StoreController extends Controller
                     'minOrderValue'     => (float) $reward->ordervalue,
                     'startDate'         => $reward->start_date,
                     'endDate'           => $reward->end_date,
-                    'maxdiscount_slabs' => array_values($slabs),      // [{from, to, max_discount}, ...]
+                    'maxdiscount_slabs' => $hasGoeroneSlabs ? array_values($slabs) : [],      // [{from, to, max_discount}, ...]
                     'custvalue'         => (float) $reward->custvalue,
                     'ownervalue'        => (float) $reward->ownervalue,
                     'max_reward_value'  => (float) $reward->max_reward_value,
+                    // 0 = GoerOne, 1 = Store, 2 = Both, null = no customer discount
+                    'discountEnabled'   => $reward->discount_enabled === null ? null : (int) $reward->discount_enabled,
+                    // GoerOne discount
+                    'goeroneDiscountType' => (int) $reward->goerone_discount_type, // 0 = percentage, 1 = fixed amount
+                    // Store discount
+                    'storeDiscType'     => (int) $reward->store_disc_type,   // 0 = percentage, 1 = fixed amount
+                    'storeDiscValue'    => (float) $reward->store_disc_value,
+                    'store_maxdiscount_slabs' => $hasStoreSlabs ? array_values($storeSlabs) : [],
                 ];
             }
         }

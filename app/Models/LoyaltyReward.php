@@ -431,56 +431,61 @@ class LoyaltyReward extends Model
      * @return \Illuminate\Support\Collection keyed by stores_id
      */
    public static function getBestRewardsForStores(array $storeIds, $AgencyID = null)
-{
-    if (empty($storeIds)) {
-        return collect();
-    }
+    {
+        if (empty($storeIds)) {
+            return collect();
+        }
 
-    $now = Carbon::now();
+        $now = Carbon::now();
 
-    $query = LoyaltyReward::select(
-        'reward.reward_id',
-        'stores_mapping.stores_id',
-        'reward.dealtype',
-        'reward.dealvalue',
-        'reward.custvalue',
-        'reward.ownervalue',
-        'reward.rewardtype',
-        'reward.rewardvalue',
-        'reward.ordervalue',
-        'reward.start_date',
-        'reward.end_date',
-        'reward.max_reward_value',
-        'reward.maxdiscount_slabs'
-    )
-        ->join('stores_mapping', function ($join) {
-            $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
-                ->where('stores_mapping.isdelete', 0);
-        })
-        ->whereIn('stores_mapping.stores_id', $storeIds)
-        ->where('reward.is_active', 1)
-        ->where(function ($q) use ($now) {
-            $q->whereNull('reward.start_date')
-                ->orWhere('reward.start_date', '<=', $now);
-        })
-        ->where(function ($q) use ($now) {
-            $q->whereNull('reward.end_date')
-                ->orWhere('reward.end_date', '>=', $now);
+        $query = LoyaltyReward::select(
+            'reward.reward_id',
+            'stores_mapping.stores_id',
+            'reward.dealtype',
+            'reward.dealvalue',
+            'reward.custvalue',
+            'reward.ownervalue',
+            'reward.rewardtype',
+            'reward.rewardvalue',
+            'reward.ordervalue',
+            'reward.start_date',
+            'reward.end_date',
+            'reward.max_reward_value',
+            'reward.maxdiscount_slabs',
+            'reward.discount_enabled',
+            'reward.goerone_discount_type',
+            'reward.store_disc_type',
+            'reward.store_disc_value',
+            'reward.store_maxdiscount_slabs'
+        )
+            ->join('stores_mapping', function ($join) {
+                $join->on('stores_mapping.reward_id', '=', 'reward.reward_id')
+                    ->where('stores_mapping.isdelete', 0);
+            })
+            ->whereIn('stores_mapping.stores_id', $storeIds)
+            ->where('reward.is_active', 1)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('reward.start_date')
+                    ->orWhere('reward.start_date', '<=', $now);
+            })
+            ->where(function ($q) use ($now) {
+                $q->whereNull('reward.end_date')
+                    ->orWhere('reward.end_date', '>=', $now);
+            });
+
+        if (!empty($AgencyID)) {
+            $query->where('reward.AgencyID', $AgencyID);
+        }
+
+        $rewards = $query->get();
+
+        // Pick the reward with the highest *effective customer discount value* per store.
+        return $rewards->groupBy('stores_id')->map(function ($storeRewards) {
+            return $storeRewards
+                ->sortByDesc(fn ($reward) => self::effectiveCustomerValue($reward))
+                ->first();
         });
-
-    if (!empty($AgencyID)) {
-        $query->where('reward.AgencyID', $AgencyID);
     }
-
-    $rewards = $query->get();
-
-    // Pick the reward with the highest *effective customer discount value* per store.
-    return $rewards->groupBy('stores_id')->map(function ($storeRewards) {
-        return $storeRewards
-            ->sortByDesc(fn ($reward) => self::effectiveCustomerValue($reward))
-            ->first();
-    });
-}
 
 /**
  * Effective discount actually available to the customer.
@@ -494,21 +499,48 @@ class LoyaltyReward extends Model
  */
     private static function effectiveCustomerValue($reward): float
     {
-        $share = (float) $reward->custvalue / 100;
+        // Rows saved before discount_enabled existed: old rule (custvalue is a % share of dealvalue).
+        if ($reward->discount_enabled === null || $reward->discount_enabled === '') {
+            $share = (float) $reward->custvalue / 100;
 
-        if ((int) $reward->dealtype === 1) {
-            $cap  = self::highestSlabDiscount($reward);
-            $pool = $cap > 0 ? min((float) $reward->dealvalue, $cap) : (float) $reward->dealvalue;
-            return $pool * $share;
+            if ((int) $reward->dealtype === 1) {
+                $cap  = self::highestSlabDiscount($reward);
+                $pool = $cap > 0 ? min((float) $reward->dealvalue, $cap) : (float) $reward->dealvalue;
+                return $pool * $share;
+            }
+
+            return (float) $reward->dealvalue * $share; // % deal, compared as a percentage
         }
 
-        return (float) $reward->dealvalue * $share; // % deal, compared as a percentage
+        $total = 0.0;
+
+        // GoerOne discount: custvalue is the discount itself, in goerone_discount_type units (0 = %, 1 = fixed)
+        if (self::goeroneEnabled($reward->discount_enabled)) {
+            $value = (float) $reward->custvalue;
+            if ((int) $reward->goerone_discount_type === 1) {
+                $cap   = self::highestSlabDiscount($reward);
+                $value = $cap > 0 ? min($value, $cap) : $value;
+            }
+            $total += $value;
+        }
+
+        // Store discount: store_disc_value in store_disc_type units (0 = %, 1 = fixed)
+        if (self::storeEnabled($reward->discount_enabled)) {
+            $value = (float) $reward->store_disc_value;
+            if ((int) $reward->store_disc_type === 1) {
+                $cap   = self::highestSlabDiscount($reward, 'store_maxdiscount_slabs');
+                $value = $cap > 0 ? min($value, $cap) : $value;
+            }
+            $total += $value;
+        }
+
+        return $total;
     }
 
     /** Highest cap across slabs, for listing/ranking where no order amount is known. */
-    public static function highestSlabDiscount($reward): float
+    public static function highestSlabDiscount($reward, string $field = 'maxdiscount_slabs'): float
     {
-        $slabs = $reward->maxdiscount_slabs;
+        $slabs = $reward->{$field};
         if (is_string($slabs)) {
             $slabs = json_decode($slabs, true);
         }
