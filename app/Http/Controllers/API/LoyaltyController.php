@@ -944,6 +944,37 @@ class LoyaltyController extends Controller
 
             $BalanceTemp = $this->rewardService->getCustomerNetBalanceTemp($request->user()->id, $AgencyID, $referneceNo);
             $Balance = $this->rewardService->getCRTranByReference($request->user(), $referneceNo, $AgencyID);
+            $BalanceDR = $this->rewardService->getPaymentReference($referneceNo, $AgencyID);
+            $convertedData = [];
+            if ($BalanceDR) {
+                $convertedData = [
+                    'id'                => $BalanceDR['id'],
+                    'AgencyID'          => $BalanceDR['AgencyID'],
+                    'CreditSystemID'    => null,
+                    'IsCreditPayment'   => false,
+                    'is_profit'         => 0,
+                    'UserSysId'         => $BalanceDR['UserSysId'],
+                    'customer_id'       => $BalanceDR['customer_id'],
+                    'PType'             => $BalanceDR['type'],
+                    'amount'            => $BalanceDR['points'],
+                    'RefrenceNo'        => $BalanceDR['ReferenceNo'],
+                    'BalanceAmount'     => $BalanceDR['balance_points'],
+                    'Remark'            => $BalanceDR['description'],
+                    'PlanType'          => $BalanceDR['PlanType'],
+                    'approved'          => $BalanceDR['status'] === 'SUCCESS' ? 1 : 0,
+                    'TrxId'             => null,
+                    'PaymentGUID'       => null,
+                    'PaymentMode'       => $BalanceDR['RewardMode'] === 'Pay' ? 'Redeem' : $BalanceDR['RewardMode'],
+                    'TDS'               => '0.00',
+                    'Notes'             => null,
+                    'PaymentDate'       => $BalanceDR['created_at'],
+                    'DueDate'           => null,
+                    'profit_booking_id' => null,
+                    'currency'          => 'INR',
+                    'credit_refund'     => 0,
+                    'created_at'        => $BalanceDR['created_at'],
+                ];
+            }
             $walletTransactions = WalletModel::from('wallet as w')->where('w.AgencyID', $AgencyID)
                 ->where('w.customer_id', $user->id)
                 ->where('w.RefrenceNo', $referneceNo)
@@ -961,7 +992,7 @@ class LoyaltyController extends Controller
                 'cashback_status' => ($BalanceTemp > 0) ? false : true,
                 'cashback' => ($BalanceTemp > 0) ? $BalanceTemp : $Balance,
                 'data' => $ReddemPass,
-                'transactions' => $walletTransactions,
+                'transactions' => !empty($walletTransactions) ? $walletTransactions : $convertedData,
                 'payment' => empty($walletTransactions) ? false : true,
                 'rdm' => empty($ReddemPass) ? false : true,
                 'mep' => empty($checkUserCardExist) ? false : true,
@@ -1765,7 +1796,7 @@ class LoyaltyController extends Controller
                                         $CreateData['parent_id'] = $parentId;
                                     }
 
-                                     // New membership on an existing reward: inherit what this request doesn't carry
+                                    // New membership on an existing reward: inherit what this request doesn't carry
                                     if ($rootId > 0) {
                                         $root = LoyaltyReward::where('AgencyID', $AgencyID)
                                             ->where('reward_id', $rootId)->first();

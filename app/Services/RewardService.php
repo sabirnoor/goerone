@@ -764,6 +764,16 @@ class RewardService
             ->with(['payer', 'payee'])
             ->get();
     }
+    public function getPaymentReference(string $txnRef, int $AgencyID)
+    {
+        return RewardWallet::where('ReferenceNo', $txnRef)->where('type', 'DR')
+            ->where(function ($q) use ($AgencyID) {
+                if ($AgencyID > 0) {
+                    $q->where('AgencyID', $AgencyID);
+                }
+            })
+            ->first();
+    }
     public function getDRTranByReference(string $txnRef, int $AgencyID)
     {
         $latestEntry = RewardWallet::where('AgencyID', $AgencyID)->where('ReferenceNo', $txnRef)
