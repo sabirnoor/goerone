@@ -1751,6 +1751,32 @@ class LoyaltyController extends Controller
                                         $CreateData['parent_id'] = $parentId;
                                     }
 
+                                     // New membership on an existing reward: inherit what this request doesn't carry
+                                    if ($rootId > 0) {
+                                        $root = LoyaltyReward::where('AgencyID', $AgencyID)
+                                            ->where('reward_id', $rootId)->first();
+                                        if ($root) {
+                                            $inherit = [
+                                                'store_disc_type'         => $root->store_disc_type,
+                                                'store_disc_value'        => $root->store_disc_value,
+                                                'store_maxdiscount_slabs' => $root->getRawOriginal('store_maxdiscount_slabs'),
+                                            ];
+                                            if ($isStoreUser) {
+                                                // keep admin's deal values instead of resetting them to 0
+                                                foreach (LoyaltyReward::ADMIN_ONLY_FIELDS as $f) {
+                                                    $inherit[$f] = $root->getRawOriginal($f);
+                                                }
+                                                $inherit['discount_enabled'] = $root->discount_enabled;
+                                            }
+                                            if (empty($imagePath)) {
+                                                $inherit['reward_logo'] = $root->reward_logo;
+                                            }
+                                            // request values win; root only fills what's missing
+                                            $CreateData = $CreateData + array_diff_key($inherit, $CreateData);
+                                        }
+                                    }
+
+
                                     if ($isStoreUser) {
                                         $CreateData += LoyaltyReward::ADMIN_FIELD_DEFAULTS;
                                     }
