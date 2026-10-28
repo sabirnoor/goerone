@@ -436,35 +436,46 @@ class LoyaltyController extends Controller
 
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
-            $Reward = LoyaltyReward::select('dealtype', 'dealvalue', 'ownervalue', 'custvalue', 'max_reward_value', 'maxdiscount_slabs', 'maxdiscountvalue', 'rewardtype', 'ordervalue', 'rewardvalue')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
-            $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
+            $Reward = LoyaltyReward::select('*')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
+            $result = [];
+            if (!empty($Reward)) {
+                $result = calculateRewardDiscount(($request->order_amount ?? 0), $Reward->toArray());
+            }
+
+            // $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
             $rewardtype = isset($Reward->rewardtype) ? $Reward->rewardtype : 0;
             $ordervalue = isset($Reward->ordervalue) ? $Reward->ordervalue : 0;
             $rewardvalue = isset($Reward->rewardvalue) ? $Reward->rewardvalue : 0;
-            $dealvalue = isset($Reward->dealvalue) ? $Reward->dealvalue : 0;
-            $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
-            $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
             $max_reward_value = isset($Reward->max_reward_value) ? $Reward->max_reward_value : 0;
-            $maxdiscountvalue = isset($Reward->maxdiscount_slabs) ? $Reward->maxdiscount_slabs : [];
-            $maxdiscountvalue = $this->getMaxDiscount($maxdiscountvalue, $request->order_amount);
-            if ($dealtype === 0 && !($request->order_amount < $ordervalue) && !empty($Reward)) {
-                $discount = (($request->order_amount * (float)$dealvalue) / 100);
-                $discountOwner = (($discount * (float)$ownervalue) / 100);
-                $discountCust = (($discount * (float)$custvalue) / 100);
-            } else if (!($request->order_amount < $ordervalue) && !empty($Reward)) {
-                $discount = $dealvalue;
-                $discountOwner = $ownervalue;
-                $discountCust = $custvalue;
-            } else if (empty($Reward)) {
-                $discount = $request->order_amount;
-                $discountOwner = 0;
-                $discountCust = 0;
-            } else {
-                $discount = 0;
-                $discountOwner = 0;
-                $discountCust = 0;
-            }
+            // $dealvalue = isset($Reward->dealvalue) ? $Reward->dealvalue : 0;
+            // $ownervalue = isset($Reward->ownervalue) ? $Reward->ownervalue : 0;
+            // $custvalue = isset($Reward->custvalue) ? $Reward->custvalue : 0;
+            // $discount_enabled = isset($Reward->discount_enabled) ? $Reward->discount_enabled : 0;
+            // 
+            // $maxdiscountvalue = isset($Reward->maxdiscount_slabs) ? $Reward->maxdiscount_slabs : [];
+            // $maxdiscountvalue = $this->getMaxDiscount($maxdiscountvalue, $request->order_amount);
+            // if ($dealtype === 0 && !($request->order_amount < $ordervalue) && !empty($Reward)) {
+            //     $discount = (($request->order_amount * (float)$dealvalue) / 100);
+            //     $discountOwner = (($discount * (float)$ownervalue) / 100);
+            //     $discountCust = (($discount * (float)$custvalue) / 100);
+            // } else if (!($request->order_amount < $ordervalue) && !empty($Reward)) {
+            //     $discount = $dealvalue;
+            //     $discountOwner = $ownervalue;
+            //     $discountCust = $custvalue;
+            // } else if (empty($Reward)) {
+            //     $discount = $request->order_amount;
+            //     $discountOwner = 0;
+            //     $discountCust = 0;
+            // } else {
+            //     $discount = 0;
+            //     $discountOwner = 0;
+            //     $discountCust = 0;
+            // }
 
+            $discount =  $result['commission'] ?? 0;
+            $store_discount =  $result['store_discount'] ?? 0;
+            $discountOwner =  $result['goerone_discount'] ?? 0;
+            $discountCust = $result['customer_discount'] ?? 0;
             if ($rewardtype === 0 && !($request->order_amount < $ordervalue)) {
                 $rewardEarns = (($request->order_amount * (float)$rewardvalue) / 100);
             } elseif ($rewardtype === 1 && !($request->order_amount < $ordervalue)) {
@@ -476,21 +487,16 @@ class LoyaltyController extends Controller
                 $rewardEarns = $max_reward_value;
             }
 
-            if ($discount >= $maxdiscountvalue && !empty($Reward)) {
-                $discount = $maxdiscountvalue;
-                $discountOwner = (($maxdiscountvalue * (float)$ownervalue) / 100);
-                $discountCust = (($maxdiscountvalue * (float)$custvalue) / 100);
-            }
 
             if (!empty($voucher_code)) {
                 $dsdsds = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, ($request->order_amount - $discountCust), $accessToken->tokenable_id, null);
                 // pr(($request->order_amount - $discountCust));
                 // pr($dsdsds);
             }
-            // pr($maxdiscountvalue);
-            // pr($discount);
+            // pr($rewardEarns);
             // pr($discountOwner);
             // pr($discountCust);
+            // pr($Reward);
             // die;
 
             $request->merge(['discount' => $discount]);
@@ -695,10 +701,15 @@ class LoyaltyController extends Controller
                         "Remark" => "Redeem at " . ($storeData->store_name ?? 'Store'),
                         'PaymentMode' => 'Redeem'
                     ];
-                    $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
+                    if ($BookingAmount > 0) {
+                        $WalletBook = WalletModel::bookingUsingWalletBalance($user, $wallet);
+                        $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
+                        $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
+                    } else {
+                        $status = 1;
+                        $message = '';
+                    }
 
-                    $status = isset($WalletBook['status']['success']) ? $WalletBook['status']['success'] : 0;
-                    $message = isset($WalletBook['message']) ? $WalletBook['message'] : 0;
                     if ($status == 0) {
                         DB::rollback();
                         return response()->json([
@@ -756,7 +767,7 @@ class LoyaltyController extends Controller
 
                         // Call the stored procedure
                         $results = DB::select(
-                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message, @redemption_id)',
+                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message, @redemption_id)',
                             [
                                 $request->user_id,
                                 $request->card_id,
@@ -766,6 +777,7 @@ class LoyaltyController extends Controller
                                 !empty($request->discount) ? $request->discount : 0,
                                 !empty($request->order_amount) ? $request->order_amount : 0,
                                 $stores_id,
+                                $store_discount,
                                 !empty($discountOwner) ? $discountOwner : 0,
                                 !empty($discountCust) ? $discountCust : 0,
                                 !empty($redem_id) ? 'GTR' . $redem_id : 0,
@@ -1539,77 +1551,77 @@ class LoyaltyController extends Controller
 
                     $isStoreUser = !isset($user->UserType);
 
-                $fail = function ($message) {
-                    DB::rollback();
-                    return response()->json([
-                        'status' => ['success' => false, 'httpStatus' => 422],
-                        'message' => $message,
-                    ]);
-                };
+                    $fail = function ($message) {
+                        DB::rollback();
+                        return response()->json([
+                            'status' => ['success' => false, 'httpStatus' => 422],
+                            'message' => $message,
+                        ]);
+                    };
 
-                // discount_enabled: 0 = GoerOne, 1 = Store, 2 = Both, null = no customer discount.
-                // Admin sends it directly; a store user can only switch its own (store) part on or off.
-                $custValue = 0.0;
-                $goeroneDiscType = 0;         // 0 = percentage, 1 = fixed
-                $ownerValue = 0;          // GoerOne keeps the whole commission unless a customer discount is set
-                $storeDiscType = 0;
-                $storeDiscValue = 0.0;
-                $storeSlabs = [];
+                    // discount_enabled: 0 = GoerOne, 1 = Store, 2 = Both, null = no customer discount.
+                    // Admin sends it directly; a store user can only switch its own (store) part on or off.
+                    $custValue = 0.0;
+                    $goeroneDiscType = 0;         // 0 = percentage, 1 = fixed
+                    $ownerValue = 0;          // GoerOne keeps the whole commission unless a customer discount is set
+                    $storeDiscType = 0;
+                    $storeDiscValue = 0.0;
+                    $storeSlabs = [];
 
-                if ($isStoreUser) {
-                    $goeroneOn = false;
-                    $storeOn = filter_var($request->store_disc_enabled, FILTER_VALIDATE_BOOLEAN);
-                } else {
-                    $goeroneOn = LoyaltyReward::goeroneEnabled($request->discount_enabled);
-                    $storeOn = LoyaltyReward::storeEnabled($request->discount_enabled);
-                }
-
-                if ($goeroneOn) {
-                    $goeroneDiscType = (int) $request->goerone_discount_type === 1 ? 1 : 0;
-                    $custValue = (float) $request->custvalue;
-                    if ($custValue <= 0) {
-                        return $fail('Enter the customer discount.');
-                    }
-                    if ($goeroneDiscType === 0 && $custValue > 100) {
-                        return $fail('Customer discount must be between 0% and 100%.');
-                    }
-                    // GoerOne share is not asked any more: the remainder for percentage, none for a fixed amount
-                    // $ownerValue = $goeroneDiscType === 0 ? 100 - $custValue : 0;
-                    $ownerValue =  0;
-
-                    [$slabs, $slabError] = LoyaltyReward::normalizeSlabs(
-                        $request->maxdiscount_slabs,
-                        $goeroneDiscType,
-                        $custValue
-                    );
-                    if ($slabError) {
-                        return $fail($slabError);
-                    }
-                }
-
-                if (!$isStoreUser && !$goeroneOn && !$storeOn && !((float) $request->rewardvalue > 0)) {
-                    return $fail('Enable at least one customer discount (GoerOne or Store) or set a cashback value.');
-                }
-
-                if ($storeOn && $isStoreUser) {
-                    $storeDiscType = (int) $request->store_disc_type === 1 ? 1 : 0;
-                    $storeDiscValue = (float) $request->store_disc_value;
-                    if ($storeDiscValue <= 0) {
-                        return $fail('Enter store discount value.');
-                    }
-                    if ($storeDiscType === 0 && $storeDiscValue > 100) {
-                        return $fail('Store discount must be between 0% and 100%.');
+                    if ($isStoreUser) {
+                        $goeroneOn = false;
+                        $storeOn = filter_var($request->store_disc_enabled, FILTER_VALIDATE_BOOLEAN);
+                    } else {
+                        $goeroneOn = LoyaltyReward::goeroneEnabled($request->discount_enabled);
+                        $storeOn = LoyaltyReward::storeEnabled($request->discount_enabled);
                     }
 
-                    [$storeSlabs, $storeSlabError] = LoyaltyReward::normalizeSlabs(
-                        $request->store_maxdiscount_slabs,
-                        $storeDiscType,
-                        $storeDiscValue
-                    );
-                    if ($storeSlabError) {
-                        return $fail('Store discount - ' . $storeSlabError);
+                    if ($goeroneOn) {
+                        $goeroneDiscType = (int) $request->goerone_discount_type === 1 ? 1 : 0;
+                        $custValue = (float) $request->custvalue;
+                        if ($custValue <= 0) {
+                            return $fail('Enter the customer discount.');
+                        }
+                        if ($goeroneDiscType === 0 && $custValue > 100) {
+                            return $fail('Customer discount must be between 0% and 100%.');
+                        }
+                        // GoerOne share is not asked any more: the remainder for percentage, none for a fixed amount
+                        // $ownerValue = $goeroneDiscType === 0 ? 100 - $custValue : 0;
+                        $ownerValue =  0;
+
+                        [$slabs, $slabError] = LoyaltyReward::normalizeSlabs(
+                            $request->maxdiscount_slabs,
+                            $goeroneDiscType,
+                            $custValue
+                        );
+                        if ($slabError) {
+                            return $fail($slabError);
+                        }
                     }
-                }
+
+                    if (!$isStoreUser && !$goeroneOn && !$storeOn && !((float) $request->rewardvalue > 0)) {
+                        return $fail('Enable at least one customer discount (GoerOne or Store) or set a cashback value.');
+                    }
+
+                    if ($storeOn && $isStoreUser) {
+                        $storeDiscType = (int) $request->store_disc_type === 1 ? 1 : 0;
+                        $storeDiscValue = (float) $request->store_disc_value;
+                        if ($storeDiscValue <= 0) {
+                            return $fail('Enter store discount value.');
+                        }
+                        if ($storeDiscType === 0 && $storeDiscValue > 100) {
+                            return $fail('Store discount must be between 0% and 100%.');
+                        }
+
+                        [$storeSlabs, $storeSlabError] = LoyaltyReward::normalizeSlabs(
+                            $request->store_maxdiscount_slabs,
+                            $storeDiscType,
+                            $storeDiscValue
+                        );
+                        if ($storeSlabError) {
+                            return $fail('Store discount - ' . $storeSlabError);
+                        }
+                    }
 
                     $isStoreUser = !isset($user->UserType);
                     $AgencyID = isset($user->UserType) && $user->UserType == 1 ? $user->id : $user->AgencyID;
@@ -1702,7 +1714,9 @@ class LoyaltyController extends Controller
                                 );
                             } else {
                                 $CreateData = array_diff_key($CreateData, array_flip([
-                                    'store_disc_type', 'store_disc_value', 'store_maxdiscount_slabs',
+                                    'store_disc_type',
+                                    'store_disc_value',
+                                    'store_maxdiscount_slabs',
                                 ]));
                             }
                             if ($isStoreUser) {
