@@ -1151,7 +1151,7 @@ class LoyaltyController extends Controller
             if ($request->isMethod('post')) {
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
-                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status']));
+                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status','keyword']));
                 if ($user && $result) {
                     return response()->json([
                         'status' => [

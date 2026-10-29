@@ -280,6 +280,21 @@ class LoyaltyReward extends Model
                 $query->where('reward.is_active', 0);
             }
 
+            $keyword = trim($post['keyword'] ?? '');
+            if ($keyword !== '') {
+                $like = '%' . $keyword . '%';
+                $query->where(function ($q) use ($like) {
+                    $q->where('reward.reward_name', 'like', $like)
+                    ->orWhereExists(function ($sub) use ($like) {
+                        $sub->select(DB::raw(1))
+                            ->from('stores_mapping as sk')
+                            ->whereColumn('sk.reward_id', 'reward.reward_id')
+                            ->where('sk.isdelete', 0)
+                            ->where('sk.store_name', 'like', $like);
+                    });
+                });
+            }
+
             $rewards = $query->paginate($perPage);
 
         // 2️⃣ Get all child programs for all these parent rewards in one query
