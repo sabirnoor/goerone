@@ -365,6 +365,7 @@ class LoyaltyRedemption extends Model
             DB::raw('ROUND(SUM(redemption.discountCust), 2) as total_discountCust'),
             DB::raw('ROUND(SUM(redemption.order_amount), 2) as total_order_amount'),
             DB::raw('ROUND(SUM(redemption.discount), 2) as total_discount'),
+            DB::raw('ROUND(SUM(redemption.store_discount), 2) as total_store_discount'),
         ];
 
         $storeColumns = [
@@ -397,6 +398,7 @@ class LoyaltyRedemption extends Model
                     'total_discountCust'  => $totals->total_discountCust ?? 0,
                     'total_order_amount'  => $totals->total_order_amount ?? 0,
                     'total_discount'      => $totals->total_discount ?? 0,
+                    'total_store_discount'      => $totals->total_store_discount ?? 0,
                 ],
             ];
         } else {

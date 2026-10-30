@@ -789,8 +789,8 @@ class LoyaltyController extends Controller
                         // Get the output parameters
                         $results = DB::select('SELECT @status as status, @message as message, @redemption_id as redemption_id');
                         $status = $results[0]->status;
-                        $message = $results[0]->message;
-                        $redemption_id = $results[0]->redemption_id;
+                        $message = $results[0]->message ?? '';
+                        $redemption_id = $results[0]->redemption_id ?? 0;
 
                         if ($status === 'SUCCESS') {
                             if ($storeData && $storeData->vendortype == 1) {
