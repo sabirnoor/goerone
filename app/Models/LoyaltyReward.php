@@ -280,6 +280,21 @@ class LoyaltyReward extends Model
                 $query->where('reward.is_active', 0);
             }
 
+            $keyword = trim($post['keyword'] ?? '');
+            if ($keyword !== '') {
+                $like = '%' . $keyword . '%';
+                $query->where(function ($q) use ($like) {
+                    $q->where('reward.reward_name', 'like', $like)
+                    ->orWhereExists(function ($sub) use ($like) {
+                        $sub->select(DB::raw(1))
+                            ->from('stores_mapping as sk')
+                            ->whereColumn('sk.reward_id', 'reward.reward_id')
+                            ->where('sk.isdelete', 0)
+                            ->where('sk.store_name', 'like', $like);
+                    });
+                });
+            }
+
             $rewards = $query->paginate($perPage);
 
         // 2️⃣ Get all child programs for all these parent rewards in one query
@@ -614,31 +629,81 @@ class LoyaltyReward extends Model
         }
     }
 
-    public static function getStoreRewardForStoreDetail($User, $perPage, $page, $post = array())
-    {
+    // public static function getStoreRewardForStoreDetail($User, $perPage, $page, $post = array(),$userMembershipAmount = null)
+    // {
+    //     $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
+    //     $responsedata = LoyaltyReward::select(
+    //         'reward.*',
+    //         DB::raw('DATE_FORMAT(reward.created_at, "%d %b, %Y") as createdDate'),
+    //         'loyalty_program.program_name',
+    //         'loyalty_program.description as program_description',
+    //     )
+    //         ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
+    //         ->leftJoin('stores_mapping as sm', 'sm.reward_id', '=', 'reward.reward_id')
+    //         ->where('reward.AgencyID', $AgencyID)
+    //         ->whereExists(function ($query) use ($post) {
+    //             $query->select(DB::raw(1))
+    //                 ->from('stores_mapping')
+    //                 ->whereRaw('stores_mapping.reward_id = reward.reward_id')
+    //                 ->where('stores_mapping.isdelete', 0)
+    //                 ->where('stores_mapping.stores_id', $post['stores_id']);
+    //         })->where('reward.is_active', 1)
+    //         ->groupBy('reward.reward_id')
+    //         ->orderBy('reward.reward_id', 'DESC')
+    //         ->paginate($perPage, ['*'], 'reward_page', $page);
+
+    //     return $responsedata;
+    // }
+
+  
+    public static function getStoreRewardForStoreDetail( $User, $perPage, $page, $post = [], $userMembershipAmount = null) {
         $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
-        $responsedata = LoyaltyReward::select(
+
+        $query = LoyaltyReward::select(
             'reward.*',
             DB::raw('DATE_FORMAT(reward.created_at, "%d %b, %Y") as createdDate'),
             'loyalty_program.program_name',
-            'loyalty_program.description as program_description',
+            'loyalty_program.description as program_description'
         )
-            ->leftJoin('loyalty_program', 'loyalty_program.program_id', '=', 'reward.program_id')
-            ->leftJoin('stores_mapping as sm', 'sm.reward_id', '=', 'reward.reward_id')
+            ->leftJoin(
+                'loyalty_program',
+                'loyalty_program.program_id',
+                '=',
+                'reward.program_id'
+            )
             ->where('reward.AgencyID', $AgencyID)
-            ->whereExists(function ($query) use ($post) {
-                $query->select(DB::raw(1))
+            ->where('reward.is_active', 1)
+            ->whereExists(function ($subQuery) use ($post) {
+                $subQuery->select(DB::raw(1))
                     ->from('stores_mapping')
-                    ->whereRaw('stores_mapping.reward_id = reward.reward_id')
+                    ->whereColumn(
+                        'stores_mapping.reward_id',
+                        'reward.reward_id'
+                    )
                     ->where('stores_mapping.isdelete', 0)
                     ->where('stores_mapping.stores_id', $post['stores_id']);
-            })->where('reward.is_active', 1)
-            ->groupBy('reward.reward_id')
-            ->orderBy('reward.reward_id', 'DESC')
-            ->paginate($perPage, ['*'], 'reward_page', $page);
+            });
 
-        return $responsedata;
+        // Customers with membership only see benefits for
+        // memberships priced at or above their own membership.
+        if ($userMembershipAmount !== null) {
+            $query->where(
+                'loyalty_program.membership_amount',
+                '>=',
+                $userMembershipAmount
+            );
+        }
+
+        return $query
+            ->orderBy('reward.reward_id', 'DESC')
+            ->paginate(
+                $perPage,
+                ['*'],
+                'reward_page',
+                $page
+            );
     }
+
 
     /**
     * Validate slabs and rebuild them contiguously.

@@ -1151,7 +1151,7 @@ class LoyaltyController extends Controller
             if ($request->isMethod('post')) {
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
-                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status']));
+                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status','keyword']));
                 if ($user && $result) {
                     return response()->json([
                         'status' => [
@@ -2966,7 +2966,45 @@ class LoyaltyController extends Controller
                 $voucherPage = (isset($request->voucher_page) && $request->voucher_page > 0) ? $request->voucher_page : 1;
 
                 $user = $request->user();
+      
+                $agencyId = (int) ($user->UserType ?? 0) === 1 ? $user->id : ($user->AgencyID ?? null);
+                $userMembershipAmount = null;
+ 
+                if ($user && $agencyId) {
+                $membershipAmount = DB::table('user_card')
+                    ->join(
+                        'loyalty_card',
+                        'loyalty_card.card_id',
+                        '=',
+                        'user_card.card_id'
+                    )
+                    ->join(
+                        'loyalty_program',
+                        'loyalty_program.program_id',
+                        '=',
+                        'loyalty_card.program_id'
+                    )
+                    ->where('user_card.user_id', $user->id)
+                    ->where('user_card.AgencyID', $agencyId)
+                    ->where('user_card.status', 'active')
+                    ->where('loyalty_card.status', 'active')
+                    ->where(function ($query) {
+                        $query->whereNull('loyalty_card.expiration_date')
+                            ->orWhereDate(
+                                'loyalty_card.expiration_date',
+                                '>=',
+                                now()->toDateString()
+                            );
+                    })
+                    ->orderByDesc('user_card.is_primary_card')
+                    ->orderByDesc('user_card.created_at')
+                    ->value('loyalty_program.membership_amount');
 
+                if ($membershipAmount !== null) {
+                    $userMembershipAmount = (float) $membershipAmount;
+                }
+            }
+            
                 if (!$stores_id) {
                     return response()->json([
                         'status' => [
@@ -2985,8 +3023,8 @@ class LoyaltyController extends Controller
                     ->where('stores.id', $stores_id)
                     ->first();
 
-                $rewards = LoyaltyReward::getStoreRewardForStoreDetail($user, $rewardPerPage, $rewardPage, $post);
-                $vouchers = Vouchers::getActiveVouchersByStore($stores_id, $voucherPerPage, $voucherPage, $user);
+                $rewards = LoyaltyReward::getStoreRewardForStoreDetail($user, $rewardPerPage, $rewardPage, $post, $userMembershipAmount);
+                $vouchers = Vouchers::getActiveVouchersByStore($stores_id, $voucherPerPage, $voucherPage, $user, $userMembershipAmount);
 
                 if ($user && $store) {
                     return response()->json([

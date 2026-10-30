@@ -100,24 +100,55 @@ class Vouchers extends Model
         return $this->belongsTo(User::class, 'AgencyID');
     }
 
-    /** Attach memberships (ids) / membership_names to each voucher of a paginated result */
-    protected static function withMemberships($paginator)
-    {
+    protected static function withMemberships($paginator,$userMembershipAmount = null) {
         $rows = DB::table('voucher_memberships as vm')
-            ->join('loyalty_program as lp', 'lp.program_id', '=', 'vm.program_id')
+            ->join('loyalty_program as lp','lp.program_id','=','vm.program_id')
             ->whereIn('vm.voucher_id', $paginator->getCollection()->pluck('id'))
-            ->get(['vm.voucher_id', 'vm.program_id', 'lp.program_name'])
+            ->when($userMembershipAmount !== null,
+                function ($query) use ($userMembershipAmount) {
+                 $query->where('lp.membership_amount','>=',$userMembershipAmount);
+                }
+                )
+            ->get(['vm.voucher_id','vm.program_id','lp.program_name','lp.membership_amount',])
             ->groupBy('voucher_id');
 
-        $paginator->getCollection()->transform(function ($v) use ($rows) {
-            $m = $rows->get($v->id, collect());
-            $v->memberships = $m->pluck('program_id')->map(fn($i) => (int) $i)->values();
-            $v->membership_names = $m->pluck('program_name')->implode(', ');
-            return $v;
-        });
+        $paginator->getCollection()->transform(function ($voucher) use ($rows) {
+            $memberships = $rows->get($voucher->id, collect());
 
+            $voucher->memberships = $memberships
+                ->pluck('program_id')
+                ->unique()
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $voucher->membership_names = $memberships
+                ->pluck('program_name')
+                ->unique()
+                ->implode(', ');
+
+            return $voucher;
+        });
         return $paginator;
     }
+
+    /** Attach memberships (ids) / membership_names to each voucher of a paginated result */
+    // protected static function withMemberships($paginator)
+    // {
+    //     $rows = DB::table('voucher_memberships as vm')
+    //         ->join('loyalty_program as lp', 'lp.program_id', '=', 'vm.program_id')
+    //         ->whereIn('vm.voucher_id', $paginator->getCollection()->pluck('id'))
+    //         ->get(['vm.voucher_id', 'vm.program_id', 'lp.program_name'])
+    //         ->groupBy('voucher_id');
+
+    //     $paginator->getCollection()->transform(function ($v) use ($rows) {
+    //         $m = $rows->get($v->id, collect());
+    //         $v->memberships = $m->pluck('program_id')->map(fn($i) => (int) $i)->values();
+    //         $v->membership_names = $m->pluck('program_name')->implode(', ');
+    //         return $v;
+    //     });
+
+    //     return $paginator;
+    // }
 
     public static function getVoucher($User, $perPage, $post = array())
     {
@@ -225,10 +256,54 @@ class Vouchers extends Model
         return $responsedata;
     }
 
-    public static function getActiveVouchersByStore($storeId, $perPage, $page, $User = null)
-    {
+    // public static function getActiveVouchersByStore($storeId, $perPage, $page, $User = null,$userMembershipAmount = null)
+    // {
+    //     $now = Carbon::now();
+    //     $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
+    //     $query = Vouchers::select(
+    //         'vouchers.id',
+    //         'vouchers.voucher_name',
+    //         'vouchers.voucher_price',
+    //         'vouchers.store_id',
+    //         'vouchers.no_of_voucher',
+    //         'vouchers.customer_type',
+    //         'vouchers.discount_type',
+    //         'vouchers.discount_value',
+    //         'vouchers.max_discount_value',
+    //         'vouchers.min_purchase_value',
+    //         'vouchers.gtcoin_required',
+    //         'vouchers.required_value',
+    //         'vouchers.valid_from',
+    //         'vouchers.valid_to',
+    //         'vouchers.is_active',
+    //         'vouchers.terms_condition',
+    //         'vouchers.redemption_type',
+    //         'vouchers.customer_share',
+    //         'vouchers.sold_count'
+    //     )
+    //         ->where('vouchers.store_id', $storeId)
+    //         ->where('vouchers.AgencyID', $AgencyID)
+    //         ->where('vouchers.is_active', 1)
+    //         ->where('vouchers.approval_status', 1)
+    //         ->where(function ($q) use ($now) {
+    //             $q->whereNull('vouchers.valid_from')
+    //                 ->orWhere('vouchers.valid_from', '<=', $now);
+    //         })
+    //         ->where(function ($q) use ($now) {
+    //             $q->whereNull('vouchers.valid_to')
+    //                 ->orWhere('vouchers.valid_to', '>=', $now);
+    //         });
+
+    //     return self::withMemberships(
+    //         $query->orderBy('vouchers.id', 'DESC')
+    //             ->paginate($perPage, ['*'], 'voucher_page', $page)
+    //     );
+    // }
+    public static function getActiveVouchersByStore( $storeId, $perPage, $page, $User = null, $userMembershipAmount = null) {
         $now = Carbon::now();
+
         $AgencyID = $User->UserType == 1 ? $User->id : $User->AgencyID;
+
         $query = Vouchers::select(
             'vouchers.id',
             'vouchers.voucher_name',
@@ -263,9 +338,41 @@ class Vouchers extends Model
                     ->orWhere('vouchers.valid_to', '>=', $now);
             });
 
+        // Apply membership eligibility only when the customer has a membership.
+        if ($userMembershipAmount !== null) {
+            $query->whereExists(function ($subQuery) use ($userMembershipAmount) {
+                $subQuery->select(DB::raw(1))
+                    ->from('voucher_memberships as vm')
+                    ->join(
+                        'loyalty_program as lp',
+                        'lp.program_id',
+                        '=',
+                        'vm.program_id'
+                    )
+                    ->whereColumn(
+                        'vm.voucher_id',
+                        'vouchers.id'
+                    )
+                    ->where(
+                        'lp.membership_amount',
+                        '>=',
+                        $userMembershipAmount
+                    );
+            });
+        }
+
+        $paginator = $query
+            ->orderBy('vouchers.id', 'DESC')
+            ->paginate(
+                $perPage,
+                ['*'],
+                'voucher_page',
+                $page
+            );
+
         return self::withMemberships(
-            $query->orderBy('vouchers.id', 'DESC')
-                ->paginate($perPage, ['*'], 'voucher_page', $page)
+            $paginator,
+            $userMembershipAmount
         );
     }
 
