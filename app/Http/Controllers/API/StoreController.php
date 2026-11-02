@@ -426,6 +426,14 @@ class StoreController extends Controller
                     $message = "Store Created Successfully!";
                 }
 
+                // Permanent QR handle: generated once (create) or when a store has none yet (update).
+                // It is never overwritten here, so a handle changed later stays as set.
+                if ($store && empty($store->qr_handle)) {
+                    $handle = Store::makeQrHandle($store->id);
+                    Store::where('id', $store->id)->update(['qr_handle' => $handle]);
+                    $store->qr_handle = $handle;
+                }
+
                 // (d) Gallery images — up to 5. New uploads are appended; existing
                 // rows are left alone unless the frontend explicitly asks to remove one
                 // (see removeStoreImage()).
@@ -569,6 +577,7 @@ class StoreController extends Controller
                 ])
                 ->whereNotNull('stores.lat')
                 ->whereNotNull('stores.lon')
+                ->where('stores.is_active', 1) // inactive stores are never shown in search
                 ->where('stores.AgencyID', $AgencyID)
                 ->whereBetween('stores.lat', [$minLat, $maxLat])
                 ->whereBetween('stores.lon', [$minLon, $maxLon]);
@@ -904,5 +913,64 @@ class StoreController extends Controller
                 // 'redirect_url' => $gatewayUrl,
             ]);
         });
+    }
+
+    /**
+     * Public: turn a scanned QR handle into the store it belongs to.
+     * Route: Route::get('/store-pay/resolve/{handle}', [StoreController::class, 'resolveByHandle'])->middleware('throttle:60,1');
+     */
+    public function resolveByHandle(Request $request, string $handle)
+    {
+        if (!preg_match('/^[A-Za-z0-9._-]{1,80}@[A-Za-z0-9._-]{1,40}$/', $handle)) {
+            return $this->jsonError('Invalid QR', 422);
+        }
+
+        $store = Store::where('qr_handle', $handle)->first();
+        if (!$store) {
+            return $this->jsonError('Store not found', 404);
+        }
+        if (!$store->is_active || !$store->payment_enabled) {
+            return $this->jsonError('This store is not accepting payments right now', 403);
+        }
+
+        return $this->jsonSuccess('OK', [
+            'store_id'   => $store->id,
+            'store_name' => $store->store_name,
+            'qr_handle'  => $store->qr_handle,
+        ]);
+    }
+
+    /**
+     * Admin: switch a store between active and inactive.
+     * Route: Route::post('/store/toggle-status', [StoreController::class, 'toggleStatus']);   (inside auth:sanctum)
+     */
+    public function toggleStatus(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), ['id' => 'required|integer']);
+            if ($validator->fails()) {
+                return $this->jsonError($validator->errors()->first(), 422);
+            }
+
+            $user = $request->user();
+            if ($user->UserType != 1) {
+                return $this->jsonError('Only an admin can change a store\'s status.', 403);
+            }
+
+            $store = Store::where('id', $request->id)->where('AgencyID', $user->id)->first();
+            if (!$store) {
+                return $this->jsonError('Store not found.', 404);
+            }
+
+            $newStatus = $store->is_active ? 0 : 1;
+            Store::where('id', $store->id)->update(['is_active' => $newStatus, 'updated_at' => now()]);
+
+            return $this->jsonSuccess(
+                $newStatus ? 'Store is now active.' : 'Store is now inactive.',
+                ['id' => $store->id, 'is_active' => (bool) $newStatus]
+            );
+        } catch (\Throwable $th) {
+            return $this->jsonError($th->getMessage());
+        }
     }
 }

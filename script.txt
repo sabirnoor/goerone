@@ -150,3 +150,11 @@ ALTER TABLE `reward`
       COMMENT '0=percentage,1=fixed' AFTER `goerone_discount_type`,
   ADD COLUMN `store_disc_value` FLOAT NOT NULL DEFAULT 0 AFTER `store_disc_type`,
   ADD COLUMN `store_maxdiscount_slabs` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER `maxdiscount_slabs`;
+
+ALTER TABLE stores
+ADD COLUMN qr_handle VARCHAR(100) NULL UNIQUE
+AFTER platform_fee_payer;
+
+ALTER TABLE `stores`
+ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
+AFTER `qr_handle`;

@@ -27,6 +27,8 @@ class Store extends Authenticatable
         'updated_by_store',
         'platform_fee',
         'platform_fee_payer',
+        'qr_handle',
+        'is_active',
     ];
 
     protected $hidden = [
@@ -42,7 +44,14 @@ class Store extends Authenticatable
         'is_halal' => 'boolean',
         'alcohol_allowed' => 'boolean',
         'platform_fee' => 'float',
+        'is_active' => 'boolean',
     ];
+
+    /** Default permanent QR handle for a store, e.g. store-42@goerone */
+    public static function makeQrHandle($storeId): string
+    {
+        return 'store-' . (int) $storeId . '@goerone';
+    }
 
     public function settlements()
     {

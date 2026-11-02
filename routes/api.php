@@ -49,6 +49,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('create', [StoreController::class, 'createStore']);
         Route::post('fetch', [StoreController::class, 'fetchStore']);
         Route::post('remove-image/{imageId}', [StoreController::class, 'removeStoreImage']);
+        Route::post('/toggle-status', [StoreController::class, 'toggleStatus']);
     });
 
     Route::prefix("loyalty")->group(function () {
@@ -171,6 +172,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::post('/store/register', [StoreAuthController::class, 'register']);
+
+Route::get('/store-pay/resolve/{handle}', [StoreController::class, 'resolveByHandle'])->middleware('throttle:60,1');
 
 Route::middleware('auth:store')->group(function () {
     Route::post('/store/logout', [StoreAuthController::class, 'logout']);

@@ -158,6 +158,19 @@ class StoreAuthController extends Controller
                 'message' => 'Authorization unsuccessful.Either email id or password is invalid',
             ]);
         }
+
+        // Inactive stores can't log in on their own (checked after the password, so it isn't revealed to a wrong password).
+        // Admin "Login as store" ($IsAdmin == 1) is allowed. To block admins too, drop the `$IsAdmin == 0 &&` part.
+        if ($IsAdmin == 0 && !$store->is_active) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 403,
+                ],
+                'message' => 'This store is inactive. Please contact support.',
+            ]);
+        }
+        
         $token = $store->createToken('store-token')->plainTextToken;
 
         return response()->json([
