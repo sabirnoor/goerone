@@ -32,15 +32,12 @@ class PerformanceReportController extends Controller
 
     private const LIVE_SQL = "user_card.status = 'active' AND (user_card.deactivation_date IS NULL OR user_card.deactivation_date >= NOW())";
 
-    /** Discount GoerOne funds for the customer = store_discount - discountCust */
-    private const GOERONE_DISC_SQL = 'r.store_discount - r.discountCust';
+    /* GoerOne discount = Customer discount - Store discount */
+    private const GOERONE_DISC_SQL = 'r.discountCust - r.store_discount';
 
-    /**
-     * Actual commission earned = commission collected (discount) - customer discount by GoerOne.
-     * NOTE: written as collected - goerone discount (the other way round is negative whenever the commission
-     * exceeds the discount). Flip here only if the business really wants it reversed.
-     */
-    private const EARNED_SQL = 'r.discount - (r.store_discount - r.discountCust)';
+    
+    /* Actual commission = Fixed commission - GoerOne discount */
+    private const EARNED_SQL = 'r.discount - (r.discountCust - r.store_discount)';
 
     /* ================================================================== */
     /*  1. Activation rate                                                 */
@@ -111,7 +108,7 @@ class PerformanceReportController extends Controller
 
         return $this->streamCsv(
             'activation-rate',
-            ['Customer', 'Email', 'Mobile', 'First Paid Activation', 'First Benefit Used', 'Days To First Benefit'],
+            ['Customer', 'Email', 'Mobile', 'Latest Active Membership', 'First Benefit Used', 'Days To First Benefit'],
             $this->activationListQuery($this->agencyId($request->user()), $f),
             fn($r) => [$this->customerName($r), $r->email, $r->mobile, $r->first_activation, $r->first_txn, $r->days_to_first]
         );
@@ -126,53 +123,91 @@ class PerformanceReportController extends Controller
         ]);
     }
 
-    /**
-     * One row per paid CUSTOMER, anchored at the activation of their FIRST paid membership
-     * (renewals/upgrades do not create a new cohort entry), with the date of their first completed
-     * redemption on/after that activation.
-     */
+   
+   /**
+     * One row per customer, anchored at their LATEST ACTIVE PAID MEMBERSHIP.
+     * First completed redemption after this membership's activation is first benefit.
+   */
     private function activationMembers(int $agencyId, array $f)
     {
-        $first = DB::table('user_card')
+        $latestActive = DB::table('user_card')
             ->join('loyalty_card as lc', 'lc.card_id', '=', 'user_card.card_id')
             ->join('loyalty_program as lp', 'lp.program_id', '=', 'lc.program_id')
             ->where('lp.membership_amount', '>', 0)
             ->where('user_card.AgencyID', $agencyId)
+            ->whereNotNull('user_card.activation_date')
+            ->whereRaw(self::LIVE_SQL)
             ->groupBy('user_card.user_id')
-            ->havingRaw('MIN(user_card.activation_date) IS NOT NULL')
-            ->selectRaw('user_card.user_id, MIN(user_card.activation_date) AS first_activation');
+            ->selectRaw(
+                'user_card.user_id,
+                MAX(user_card.activation_date) AS first_activation'
+            )
+            ->where('user_card.activation_date', '<=', now());
 
+        // Filter using the latest active membership date.
         if (!empty($f['from_date'])) {
-            $first->havingRaw('MIN(user_card.activation_date) >= ?', [$f['from_date'] . ' 00:00:00']);
-        }
-        if (!empty($f['to_date'])) {
-            $first->havingRaw('MIN(user_card.activation_date) <= ?', [$f['to_date'] . ' 23:59:59']);
+            $latestActive->havingRaw(
+                'MAX(user_card.activation_date) >= ?',
+                [$f['from_date'] . ' 00:00:00']
+            );
         }
 
-        return DB::query()->fromSub($first, 'fp')
+        if (!empty($f['to_date'])) {
+            $latestActive->havingRaw(
+                'MAX(user_card.activation_date) <= ?',
+                [$f['to_date'] . ' 23:59:59']
+            );
+        }
+
+        return DB::query()
+            ->fromSub($latestActive, 'fp')
             ->select('fp.user_id', 'fp.first_activation')
-            ->selectRaw('(SELECT MIN(r.redemption_date) FROM ' . self::R . ' r
-                          WHERE r.user_id = fp.user_id AND r.AgencyID = ? AND r.status = ?
-                            AND r.redemption_date >= fp.first_activation) AS first_txn', [$agencyId, 'completed']);
+            ->selectRaw(
+                '(SELECT MIN(r.redemption_date)
+                FROM ' . self::R . ' r
+                WHERE r.user_id = fp.user_id
+                AND r.AgencyID = ?
+                AND r.status = ?
+                AND r.redemption_date >= fp.first_activation
+                ) AS first_txn',
+                [$agencyId, 'completed']
+            );
     }
 
-    /**
-     * Windows only count MATURE members: a member activated 10 days ago cannot have had 30 days
-     * to use a benefit yet, so for the N-day rate the denominator is members activated >= N days ago.
+     /**
+     * All latest active paid members are included in the denominator.
+     * Numerators count members whose first completed redemption occurred
+     * within the respective 30, 60 or 90-day window.
      */
     private function activationAggregates(): string
     {
         $parts = [
             'COUNT(*) AS total',
             'COALESCE(SUM(m.first_txn IS NOT NULL), 0) AS activated_ever',
-            'AVG(CASE WHEN m.first_txn IS NOT NULL THEN TIMESTAMPDIFF(DAY, m.first_activation, m.first_txn) END) AS avg_days',
+            'AVG(
+                CASE
+                    WHEN m.first_txn IS NOT NULL
+                    THEN TIMESTAMPDIFF(
+                        DAY,
+                        m.first_activation,
+                        m.first_txn
+                    )
+                END
+            ) AS avg_days',
         ];
+
         foreach (self::WINDOWS as $n) {
-            $parts[] = "COALESCE(SUM(m.first_activation <= NOW() - INTERVAL {$n} DAY), 0) AS eligible_{$n}";
-            $parts[] = "COALESCE(SUM(m.first_txn IS NOT NULL
-                          AND m.first_txn <= m.first_activation + INTERVAL {$n} DAY
-                          AND m.first_activation <= NOW() - INTERVAL {$n} DAY), 0) AS activated_{$n}";
+
+            // Every active paid member is included in the denominator.
+            $parts[] = 'COUNT(*) AS eligible_' . $n;
+
+            // Numerator: first benefit used within the specified window.
+            $parts[] = "COALESCE(SUM(
+                m.first_txn IS NOT NULL
+                AND m.first_txn <= m.first_activation + INTERVAL {$n} DAY
+            ), 0) AS activated_{$n}";
         }
+
         return implode(', ', $parts);
     }
 
@@ -203,11 +238,9 @@ class PerformanceReportController extends Controller
             $q->whereNotNull('m.first_txn');
         } elseif ($state === 'not_activated') {
             $q->whereNull('m.first_txn');
-        } elseif ($state && preg_match('/^within_(30|60|90)$/', $state, $mt)) {
-            $n = (int) $mt[1]; // whitelisted by validation + regex
-            $q->whereNotNull('m.first_txn')
-                ->whereRaw("m.first_txn <= m.first_activation + INTERVAL {$n} DAY")
-                ->whereRaw("m.first_activation <= NOW() - INTERVAL {$n} DAY");
+        }  elseif ($state && preg_match('/^within_(30|60|90)$/', $state, $mt)) {
+            $n = (int) $mt[1];
+            $q->whereNotNull('m.first_txn')->whereRaw("m.first_txn <= m.first_activation + INTERVAL {$n} DAY");
         }
         return $q;
     }
