@@ -91,12 +91,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/membership-invites/{id}/review', [MembershipController::class, 'reviewInvite']);
     });
 
-    Route::prefix("payment")->group(function () {
-        Route::any('/scan-qrcode', [ScanPayController::class, 'scanQrcode'])->name('scan-qrcode');
-        Route::any('/scan-pay', [ScanPayController::class, 'scanPay'])->name('scan-pay');
-        Route::any('/payment-history', [ScanPayController::class, 'getPaymentHistory'])->name('payment-history');
-        Route::any('/user-balance', [ScanPayController::class, 'getUserBalance'])->name('user-balance');
-    });
+
     Route::prefix("voucher")->group(function () {
         Route::any('/', [VouchersController::class, 'index']);
         Route::any('/add', [VouchersController::class, 'addnew']);
@@ -182,6 +177,12 @@ Route::middleware('auth:store')->group(function () {
     Route::get('/store/profile', [StoreAuthController::class, 'profile']);
 });
 Route::middleware('apiKey')->group(function () {
+    Route::prefix("payment")->group(function () {
+        Route::any('/scan-qrcode', [ScanPayController::class, 'scanQrcode'])->name('scan-qrcode');
+        Route::any('/scan-pay', [ScanPayController::class, 'scanPay'])->name('scan-pay');
+        Route::any('/payment-history', [ScanPayController::class, 'getPaymentHistory'])->name('payment-history');
+        Route::any('/user-balance', [ScanPayController::class, 'getUserBalance'])->name('user-balance');
+    });
     Route::prefix('GoerOne')->group(function () {
         Route::post('login', [GoerOneAuthController::class, 'login']);
         Route::post('register', [GoerOneAuthController::class, 'register']);
