@@ -112,57 +112,8 @@ class LoyaltyUserCard extends Model
         ];
     }
 
-
     public static function getloyaltyUserCardDetails($User, $post = array())
     {
-        // $responsedata = LoyaltyUserCard::select(
-        //     'user_card.*',
-        //     DB::raw('DATE_FORMAT(user_card.created_at, "%d %b, %Y") as createdDate'),
-        //     'users.title',
-        //     'users.fname',
-        //     'users.lname',
-        //     'users.name',
-        //     'users.UserType',
-        //     'users.email',
-        //     'users.mobile',
-        //     'loyalty_card.expiration_date',
-        //     'loyalty_card.issue_date',
-        //     'loyalty_card.card_type',
-        //     'loyalty_card.program_id',
-        //     'reward.reward_id',
-        //     'reward.reward_name',
-        //     'reward.description',
-        //     'reward.points_required',
-        //     'reward.dealtype',
-        //     'reward.dealvalue',
-        //     'reward.ownervalue',
-        //     'reward.custvalue',
-        //     'reward.rewardtype',
-        //     'reward.ordervalue',
-        //     'reward.rewardvalue',
-        // )->leftjoin('users', 'users.id', '=', 'user_card.user_id')
-        //     ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
-        //     ->join('reward', 'loyalty_card.program_id', '=', 'reward.program_id')
-        //     ->join('stores_mapping', function ($join) use ($post) {
-        //         $join->on('reward.reward_id', '=', 'stores_mapping.reward_id')
-        //             ->where('stores_mapping.stores_id', '=', $post['store_id'])
-        //             ->where('stores_mapping.isdelete', '=', 0);
-        //     })
-        //     ->where(function ($query) use ($User) {
-        //         if ($User->UserType == 1) {
-        //             $query->where('user_card.AgencyID', $User->id);
-        //             $query->where('reward.AgencyID', $User->id);
-        //         } else {
-        //             $query->where('user_card.UserSysId', $User->id);
-        //             $query->where('reward.UserSysId', $User->id);
-        //         }
-        //     })->where(function ($query) use ($post) {
-        //         if (!empty($post['card_number'])) {
-        //             $query->where('user_card.card_number', $post['card_number']);
-        //         }
-        //     })->get();
-        // return $responsedata;
-
 
 
         $userInfo = LoyaltyUserCard::select(
@@ -237,6 +188,83 @@ class LoyaltyUserCard extends Model
         ];
         return $response;
     }
+
+    public static function getvalidateCustomer($User, $post = array())
+    {
+        $userInfo = LoyaltyUserCard::with('usercard')->select(
+            'user_card.*',
+            DB::raw('DATE_FORMAT(user_card.created_at, "%d %b, %Y") as createdDate'),
+            'users.title',
+            'users.fname',
+            'users.lname',
+            'users.name',
+            'users.UserType',
+            'users.email',
+            'users.mobile'
+        )
+            ->leftjoin('users', 'users.id', '=', 'user_card.user_id')
+            ->where(function ($query) use ($User) {
+                if ($User->UserType == 1) {
+                    $query->where('user_card.AgencyID', $User->id);
+                } else {
+                    $query->where('user_card.AgencyID', $User->AgencyID);
+                }
+            })
+            ->where(function ($query) use ($post) {
+                if (!empty($post['customer_id'])) {
+                    $query->where('user_card.user_id', $post['customer_id']);
+                }
+            })->where('user_card.status', 'active')->first();
+
+        // Then get card and reward info
+        $cardRewardInfo = LoyaltyUserCard::select(
+            'loyalty_card.expiration_date',
+            'loyalty_card.issue_date',
+            'loyalty_card.card_type',
+            'loyalty_card.program_id',
+            'reward.reward_id',
+            'reward.reward_name',
+            'reward.description',
+            'reward.points_required',
+            'reward.dealtype',
+            'reward.dealvalue',
+            'reward.ownervalue',
+            'reward.custvalue',
+            'reward.rewardtype',
+            'reward.ordervalue',
+            'reward.rewardvalue',
+        )
+            ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+            ->join('reward', 'loyalty_card.program_id', '=', 'reward.program_id')
+            ->join('stores_mapping', function ($join) use ($post) {
+                $join->on('reward.reward_id', '=', 'stores_mapping.reward_id')
+                    ->where('stores_mapping.stores_id', '=', $post['store_id'])
+                    ->where('stores_mapping.isdelete', '=', 0);
+            })
+            ->where(function ($query) use ($User) {
+                if ($User->UserType == 1) {
+                    $query->where('reward.AgencyID', $User->id);
+                } else {
+                    $query->where('reward.AgencyID', $User->AgencyID);
+                }
+            })
+            ->where(function ($query) use ($userInfo) {
+                if ($userInfo && !empty($userInfo->card_number)) {
+                    $query->where('user_card.card_number', $userInfo->card_number);
+                }
+            })
+            ->get();
+        $AgencyID = $User->AgencyID;
+        $Store = Store::select('id', 'store_name', 'OTPAllowed', 'FaceRecognition', 'noOfPass', 'vendortype')->where('AgencyID', $AgencyID)->where('id', $post['store_id'])->first();
+
+        $response = [
+            'user' => $userInfo,
+            'Store' => $Store,
+            'reward' => $cardRewardInfo
+        ];
+        return $response;
+    }
+
 
     public static function getUserCardDetails($User, $post = array())
     {

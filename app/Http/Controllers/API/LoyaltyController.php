@@ -20,6 +20,8 @@ use App\Models\RewardEarn;
 use App\Models\Store;
 use App\Models\StorePayment;
 use App\Models\StoresMapping;
+use App\Models\User;
+use App\Models\Users;
 use DateTime;
 use App\Models\Vouchers;
 use App\Models\WalletModel;
@@ -35,6 +37,7 @@ use Mpdf\Mpdf;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Services\EmailService;
 
 class LoyaltyController extends Controller
 {
@@ -44,13 +47,15 @@ class LoyaltyController extends Controller
     public $API_URL;
     protected $otpService;
     private $rewardService;
-    public function __construct(OtpService $otpService, RewardService $rewardService)
+    protected $emailService;
+    public function __construct(OtpService $otpService, RewardService $rewardService, EmailService $emailService,)
     {
         $this->APP_NAME = env('APP_NAME');
         $this->APP_URL = env('APP_URL');
         $this->API_URL = env('API_URL');
         $this->otpService = $otpService;
         $this->rewardService = $rewardService;
+        $this->emailService = $emailService;
     }
     public function getMaxDiscount(array $slabs, float $amount): float
     {
@@ -1151,7 +1156,7 @@ class LoyaltyController extends Controller
             if ($request->isMethod('post')) {
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
-                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status','keyword']));
+                $result = LoyaltyReward::getloyaltyReward($user, $perPage, $request->only(['created_by', 'status', 'keyword']));
                 if ($user && $result) {
                     return response()->json([
                         'status' => [
@@ -2423,6 +2428,110 @@ class LoyaltyController extends Controller
             ]);
         }
     }
+    public function validateCustomer(Request $request)
+    {
+        try {
+            if ($request->isMethod('post')) {
+                $user = $request->user();
+                $validator = Validator::make($request->all(), [
+                    'store_id' => 'required',
+                    'mobile' => 'required',
+                ]);
+                if ($validator->fails()) {
+                    $errors = json_encode($validator->messages());
+                    $errorArray = [];
+                    if (json_decode($errors, 1)) {
+                        foreach (json_decode($errors, 1) as $err) {
+                            foreach ($err as $errs) {
+                                $errorArray[] = ($errs);
+                            }
+                        }
+                    }
+                    //print_r($errorArray);
+                    return response()->json([
+                        'status' => false,
+                        'httpStatus' => 201,
+                        'message' => implode(',', $errorArray),
+                        'error' => $validator->messages(),
+                    ]);
+                } else {
+                    $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
+                    $mobile = $request->mobile ?? '';
+                    $otp_required = $request->otp_required ?? false;
+                    $customer = User::without('details', 'agency', 'symbal')->where('GoerOne', 1)->where('AgencyID', $AgencyID)->where('mobile', $mobile)->first();
+                    if ($customer) {
+                        $request->merge([
+                            'customer_id' => strtoupper($customer->id),
+                        ]);
+                        $cardDetails = LoyaltyUserCard::getvalidateCustomer($user, $request->all());
+
+                        if ($user && $cardDetails) {
+                            if ($otp_required) {
+                                $user = User::where('id', $AgencyID)->where('active', 1)->first();
+                                $ipAddress = $request->ip();
+                                $OTPS = random_int(100000, 999999);
+                                $data = [
+                                    'OTPS' => $OTPS,
+                                    'logo' => GetLogo($user),
+                                ];
+                                $subject = 'OTP for User Account Verification';
+                                $body = view('emails.otp_send', $data)->render();
+                                $this->emailService->sendEmail(
+                                    $user,
+                                    $customer->email,
+                                    $subject,
+                                    $body,
+                                    $ipAddress
+                                );
+                                $to = $mobile; // recipient number
+                                $message = "Dear User, your OTP for CRM access is " . $OTPS . ". DO NOT SHARE the OTP. If you did not request an OTP contact us on our support number. Team CRMOZC";
+                                $otpRequest = $this->otpService->generateOtpNew(
+                                    $user,
+                                    $mobile,
+                                    $message,
+                                    $ipAddress,
+                                    $OTPS,
+                                );
+                            }
+
+                            return response()->json([
+                                'status' => [
+                                    'success' => true,
+                                    'httpStatus' => 200,
+                                ],
+                                'message' => 'Success',
+                                'data' => $cardDetails,
+                            ]);
+                        } else {
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 500,
+                                ],
+                                'message' => 'This loyalty card is either inactive or has not been properly configured with an associated reward. Kindly verify the reward status in the reward list',
+                            ]);
+                        }
+                    } else {
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 500,
+                            ],
+                            'message' => 'Customer not found',
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 500,
+                ],
+                'message' => $th->getMessage(),
+            ]);
+        }
+    }
 
     public function getRedemptionReport(Request $request)
     {
@@ -2966,45 +3075,45 @@ class LoyaltyController extends Controller
                 $voucherPage = (isset($request->voucher_page) && $request->voucher_page > 0) ? $request->voucher_page : 1;
 
                 $user = $request->user();
-      
+
                 $agencyId = (int) ($user->UserType ?? 0) === 1 ? $user->id : ($user->AgencyID ?? null);
                 $userMembershipAmount = null;
- 
-                if ($user && $agencyId) {
-                $membershipAmount = DB::table('user_card')
-                    ->join(
-                        'loyalty_card',
-                        'loyalty_card.card_id',
-                        '=',
-                        'user_card.card_id'
-                    )
-                    ->join(
-                        'loyalty_program',
-                        'loyalty_program.program_id',
-                        '=',
-                        'loyalty_card.program_id'
-                    )
-                    ->where('user_card.user_id', $user->id)
-                    ->where('user_card.AgencyID', $agencyId)
-                    ->where('user_card.status', 'active')
-                    ->where('loyalty_card.status', 'active')
-                    ->where(function ($query) {
-                        $query->whereNull('loyalty_card.expiration_date')
-                            ->orWhereDate(
-                                'loyalty_card.expiration_date',
-                                '>=',
-                                now()->toDateString()
-                            );
-                    })
-                    ->orderByDesc('user_card.is_primary_card')
-                    ->orderByDesc('user_card.created_at')
-                    ->value('loyalty_program.membership_amount');
 
-                if ($membershipAmount !== null) {
-                    $userMembershipAmount = (float) $membershipAmount;
+                if ($user && $agencyId) {
+                    $membershipAmount = DB::table('user_card')
+                        ->join(
+                            'loyalty_card',
+                            'loyalty_card.card_id',
+                            '=',
+                            'user_card.card_id'
+                        )
+                        ->join(
+                            'loyalty_program',
+                            'loyalty_program.program_id',
+                            '=',
+                            'loyalty_card.program_id'
+                        )
+                        ->where('user_card.user_id', $user->id)
+                        ->where('user_card.AgencyID', $agencyId)
+                        ->where('user_card.status', 'active')
+                        ->where('loyalty_card.status', 'active')
+                        ->where(function ($query) {
+                            $query->whereNull('loyalty_card.expiration_date')
+                                ->orWhereDate(
+                                    'loyalty_card.expiration_date',
+                                    '>=',
+                                    now()->toDateString()
+                                );
+                        })
+                        ->orderByDesc('user_card.is_primary_card')
+                        ->orderByDesc('user_card.created_at')
+                        ->value('loyalty_program.membership_amount');
+
+                    if ($membershipAmount !== null) {
+                        $userMembershipAmount = (float) $membershipAmount;
+                    }
                 }
-            }
-            
+
                 if (!$stores_id) {
                     return response()->json([
                         'status' => [

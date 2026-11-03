@@ -78,7 +78,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('reward-reject', [LoyaltyController::class, 'rejectReward']);
         Route::post('/rewards/deactivate', [LoyaltyController::class, 'deactivateReward']);
 
-        //Route::post('validateusercard', [LoyaltyController::class, 'validateusercard']);
+        Route::post('validate-customer', [LoyaltyController::class, 'validateCustomer']);
         Route::post('membership', [MembershipController::class, 'membershipList']);
         Route::post('membership/{program_id}/details', [MembershipController::class, 'membershipDetails']);
         Route::post('savemembership', [MembershipController::class, 'addMembership']);
@@ -147,28 +147,27 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/pan-verify', [PanController::class, 'panverify']);
 
     Route::prefix('report')->group(function () {
-    // Paid members by tier
-    Route::post('paid-members-tier',               [ReportController::class, 'paidMembersByTier']);
-    Route::post('paid-members-tier/members',       [ReportController::class, 'paidMembersList']);
-    Route::post('paid-members-tier/export',        [ReportController::class, 'paidMembersExport']);
- 
-    // Registered members (users.GoerOne = 1)
-    Route::post('registered-members',              [ReportController::class, 'registeredMembers']);
-    Route::post('registered-members/export',       [ReportController::class, 'registeredMembersExport']);
-      // Performance reports (redemption based)
-    Route::post('activation',                      [PerformanceReportController::class, 'activation']);
-    Route::post('activation/members',              [PerformanceReportController::class, 'activationMembersList']);
-    Route::post('activation/export',               [PerformanceReportController::class, 'activationExport']);
- 
-    Route::post('active-transactors',              [PerformanceReportController::class, 'activeTransactors']);
-    Route::post('active-transactors/members',      [PerformanceReportController::class, 'transactorsList']);
-    Route::post('active-transactors/export',       [PerformanceReportController::class, 'transactorsExport']);
- 
-    Route::post('commission',                      [PerformanceReportController::class, 'commission']);
-    Route::post('commission/ledger',               [PerformanceReportController::class, 'commissionLedger']);
-    Route::post('commission/export',               [PerformanceReportController::class, 'commissionExport']);
-    });
+        // Paid members by tier
+        Route::post('paid-members-tier',               [ReportController::class, 'paidMembersByTier']);
+        Route::post('paid-members-tier/members',       [ReportController::class, 'paidMembersList']);
+        Route::post('paid-members-tier/export',        [ReportController::class, 'paidMembersExport']);
 
+        // Registered members (users.GoerOne = 1)
+        Route::post('registered-members',              [ReportController::class, 'registeredMembers']);
+        Route::post('registered-members/export',       [ReportController::class, 'registeredMembersExport']);
+        // Performance reports (redemption based)
+        Route::post('activation',                      [PerformanceReportController::class, 'activation']);
+        Route::post('activation/members',              [PerformanceReportController::class, 'activationMembersList']);
+        Route::post('activation/export',               [PerformanceReportController::class, 'activationExport']);
+
+        Route::post('active-transactors',              [PerformanceReportController::class, 'activeTransactors']);
+        Route::post('active-transactors/members',      [PerformanceReportController::class, 'transactorsList']);
+        Route::post('active-transactors/export',       [PerformanceReportController::class, 'transactorsExport']);
+
+        Route::post('commission',                      [PerformanceReportController::class, 'commission']);
+        Route::post('commission/ledger',               [PerformanceReportController::class, 'commissionLedger']);
+        Route::post('commission/export',               [PerformanceReportController::class, 'commissionExport']);
+    });
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::post('/store/register', [StoreAuthController::class, 'register']);

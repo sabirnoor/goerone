@@ -255,7 +255,7 @@ function GetLogo($user)
 
     if ($user) {
         // user-based logo
-        $logos = $baseUrl . '/storage/upload/' . $user->id . '/logo/' . $user->details->logo;
+        $logos = $baseUrl . '/storage/upload/' . $user->id . '/logo/' . $user->details->logo ?? $user->logo;
     } else {
         if ($hostname == 'crm.goertrip.club') {
             $logos = $baseUrl . '/images/goertrip/logo.png';
