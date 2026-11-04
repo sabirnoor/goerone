@@ -29,6 +29,13 @@ class Store extends Authenticatable
         'platform_fee_payer',
         'qr_handle',
         'is_active',
+        'bank_account_holder_name',
+        'bank_account_number',
+        'bank_ifsc',
+        'bank_name',
+        'bank_branch',
+        'bank_account_type',
+        'bank_cancelled_cheque',
     ];
 
     protected $hidden = [
@@ -45,6 +52,16 @@ class Store extends Authenticatable
         'alcohol_allowed' => 'boolean',
         'platform_fee' => 'float',
         'is_active' => 'boolean',
+    ];
+
+    /** Allowed values for stores.bank_account_type */
+    public const BANK_ACCOUNT_TYPES = [
+        'savings',
+        'current',
+        'salary',
+        'nri',
+        'fixed_deposit',
+        'recurring_deposit',
     ];
 
     /** Default permanent QR handle for a store, e.g. store-42@goerone */

@@ -179,6 +179,9 @@ class Vouchers extends Model
             'vouchers.redemption_type',
             'vouchers.customer_share',
             'vouchers.owner_share',
+            'vouchers.sold_count',
+            'vouchers.created_by_store',
+            'cs.store_name as created_by_store_name',
             'stores.store_name',
             'stores.email as store_email',
             'customer_vouchers.used_at',
@@ -186,6 +189,7 @@ class Vouchers extends Model
             'customer_vouchers.status as used_status',
         )
             ->leftJoin('stores', 'stores.id', '=', 'vouchers.store_id')
+            ->leftJoin('stores as cs', 'cs.id', '=', 'vouchers.created_by_store')
             ->leftJoin('customer_vouchers', 'customer_vouchers.voucher_id', '=', 'vouchers.id')
             ->where(function ($query) use ($User) {
                 if ($User->UserType == 1) {
@@ -196,11 +200,77 @@ class Vouchers extends Model
                             ->orWhere('vouchers.store_id', $User->id);
                     });
                 }
-            })
+            });
+
+        self::applyListFilters($responsedata, $post);
+
+        $responsedata = $responsedata
             ->orderBy('vouchers.id', 'DESC')
             ->paginate($perPage);
 
         return self::withMemberships($responsedata);
+    }
+
+    /**
+     * Filters for the vouchers list (Voucher.jsx).
+     * keyword       : voucher name or store name
+     * created_by    : all | admin | store
+     * status        : all | pending | approved | rejected | active | inactive | expired
+     * membership_id : voucher_memberships.program_id
+     */
+    protected static function applyListFilters($query, array $post): void
+    {
+        $keyword    = trim((string) ($post['keyword'] ?? ''));
+        $createdBy  = (string) ($post['created_by'] ?? 'all');
+        $status     = (string) ($post['status'] ?? 'all');
+        $membership = (int) ($post['membership_id'] ?? 0);
+
+        if ($keyword !== '') {
+            $like = '%' . addcslashes($keyword, '\\%_') . '%';
+            $query->where(function ($w) use ($like) {
+                $w->where('vouchers.voucher_name', 'like', $like)
+                    ->orWhere('stores.store_name', 'like', $like);
+            });
+        }
+
+        if ($createdBy === 'admin') {
+            $query->whereNull('vouchers.created_by_store');
+        } elseif ($createdBy === 'store') {
+            $query->whereNotNull('vouchers.created_by_store');
+        }
+
+        switch ($status) {
+            case 'pending':
+                $query->where('vouchers.approval_status', 0);
+                break;
+            case 'approved':
+                $query->where('vouchers.approval_status', 1);
+                break;
+            case 'rejected':
+                $query->where('vouchers.approval_status', 2);
+                break;
+            case 'active':
+                // live right now: approved, switched on and not past its end date
+                $query->where('vouchers.approval_status', 1)
+                    ->where('vouchers.is_active', 1)
+                    ->where(fn($w) => $w->whereNull('vouchers.valid_to')->orWhereDate('vouchers.valid_to', '>=', today()));
+                break;
+            case 'inactive':
+                $query->where('vouchers.approval_status', 1)->where('vouchers.is_active', 0);
+                break;
+            case 'expired':
+                $query->whereNotNull('vouchers.valid_to')->whereDate('vouchers.valid_to', '<', today());
+                break;
+        }
+
+        if ($membership > 0) {
+            $query->whereExists(function ($q) use ($membership) {
+                $q->select(DB::raw(1))
+                    ->from('voucher_memberships as vmf')
+                    ->whereColumn('vmf.voucher_id', 'vouchers.id')
+                    ->where('vmf.program_id', $membership);
+            });
+        }
     }
     public static function getVoucherAPI($User, $perPage, $post = array())
     {

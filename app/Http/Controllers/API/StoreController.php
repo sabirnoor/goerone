@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use App\Http\Controllers\API\AuthController;
 use App\Helpers\Helper;
-use App\Models\Staticcities;
 use App\Models\StorePayment;
 use App\Models\User;
 
@@ -205,6 +204,45 @@ class StoreController extends Controller
                     'platform_fee_payer' => ['nullable', Rule::in(['store', 'customer'])],
                 ];
 
+                // Bank details — optional and written by the store only (admin just views them).
+                // The form always sends bank_account_number for a store save, so its presence is the signal.
+                // Once an account number is filled, everything except branch becomes mandatory.
+                $hasBankInput = $request->user()->UserType != 1 && $request->has('bank_account_number');
+                $bankAttributes = [];
+                if ($hasBankInput) {
+                    if ($request->filled('bank_ifsc')) {
+                        $request->merge(['bank_ifsc' => strtoupper(trim($request->bank_ifsc))]);
+                    }
+                    $existingCheque = !empty($storeId)
+                        ? Store::where('id', $storeId)->value('bank_cancelled_cheque')
+                        : null;
+
+                    $sharedRules = array_merge($sharedRules, [
+                        'bank_account_number' => ['nullable', 'digits_between:9,18', 'confirmed'],
+                        'bank_account_number_confirmation' => ['required_with:bank_account_number'],
+                        'bank_account_holder_name' => ['required_with:bank_account_number', 'nullable', 'string', 'max:150'],
+                        'bank_ifsc' => ['required_with:bank_account_number', 'nullable', 'regex:/^[A-Z]{4}0[A-Z0-9]{6}$/'],
+                        'bank_name' => ['required_with:bank_account_number', 'nullable', 'string', 'max:150'],
+                        'bank_branch' => ['nullable', 'string', 'max:150'],
+                        'bank_account_type' => ['required_with:bank_account_number', 'nullable', Rule::in(Store::BANK_ACCOUNT_TYPES)],
+                        // required once an account number is given, unless a cheque is already on file
+                        'bank_cancelled_cheque' => [
+                            Rule::requiredIf(fn () => $request->filled('bank_account_number') && empty($existingCheque)),
+                            'nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:4096',
+                        ],
+                    ]);
+                    $bankAttributes = [
+                        'bank_account_number' => 'account number',
+                        'bank_account_number_confirmation' => 'confirm account number',
+                        'bank_account_holder_name' => 'account holder name',
+                        'bank_ifsc' => 'IFSC code',
+                        'bank_name' => 'bank name',
+                        'bank_branch' => 'branch name',
+                        'bank_account_type' => 'account type',
+                        'bank_cancelled_cheque' => 'cancelled cheque',
+                    ];
+                }
+
                 if (!empty($storeId)) {
                     $validator = Validator::make($request->all(), array_merge($sharedRules, [
                         'store_name' => 'required|string|max:255',
@@ -228,6 +266,10 @@ class StoreController extends Controller
                         ],
                         'message' => 'Please enable Enquiry, Payment, or both.',
                     ]);
+                }
+
+                if ($bankAttributes) {
+                    $validator->setAttributeNames($bankAttributes);
                 }
 
                 if ($validator->fails()) {
@@ -351,6 +393,29 @@ class StoreController extends Controller
                     $storeData['platform_fee_payer'] = $request->filled('platform_fee_payer')
                         ? $request->platform_fee_payer
                         : 'store';
+                }
+
+                // Bank details: only a store save touches them. An admin save leaves the stored values alone.
+                if ($hasBankInput) {
+                    $bankFilled = $request->filled('bank_account_number');
+                    // Clearing the account number clears the whole bank block.
+                    $storeData['bank_account_number']      = $bankFilled ? $request->bank_account_number : null;
+                    $storeData['bank_account_holder_name'] = $bankFilled ? trim($request->bank_account_holder_name) : null;
+                    $storeData['bank_ifsc']                = $bankFilled ? $request->bank_ifsc : null;
+                    $storeData['bank_name']                = $bankFilled ? trim($request->bank_name) : null;
+                    $storeData['bank_branch']              = $bankFilled && $request->filled('bank_branch') ? trim($request->bank_branch) : null;
+                    $storeData['bank_account_type']        = $bankFilled ? $request->bank_account_type : null;
+
+                    if (!$bankFilled) {
+                        $storeData['bank_cancelled_cheque'] = null;
+                    } elseif ($request->hasFile('bank_cancelled_cheque')) {
+                        $cheque = $request->file('bank_cancelled_cheque');
+                        // extension() is guessed from the file contents, not the client-supplied name
+                        $chequeName = 'cheque_' . time() . '_' . uniqid() . '.' . $cheque->extension();
+                        $cheque->move(public_path('uploads/store/cheques'), $chequeName);
+                        $storeData['bank_cancelled_cheque'] = $this->APP_URL . '/uploads/store/cheques/' . $chequeName;
+                    }
+                    // no new file + account number filled => keep the cheque already on file
                 }
 
                 $imagePath = null;

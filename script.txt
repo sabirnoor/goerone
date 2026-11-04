@@ -163,3 +163,12 @@ ALTER TABLE `reward`
 ADD COLUMN `goerone_discount_source` SMALLINT NOT NULL DEFAULT 0
 COMMENT '0=commission, 1=order amount'
 AFTER `goerone_discount_type`;
+
+ALTER TABLE `stores`
+ADD COLUMN `bank_account_holder_name` VARCHAR(150) NULL,
+ADD COLUMN `bank_account_number` VARCHAR(20) NULL,
+ADD COLUMN `bank_ifsc` VARCHAR(11) NULL,
+ADD COLUMN `bank_name` VARCHAR(150) NULL,
+ADD COLUMN `bank_branch` VARCHAR(150) NULL,
+ADD COLUMN `bank_account_type` VARCHAR(30) NULL COMMENT 'savings, current, salary, nri, fixed_deposit, recurring_deposit',
+ADD COLUMN `bank_cancelled_cheque` VARCHAR(255) NULL;
