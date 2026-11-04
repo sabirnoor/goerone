@@ -158,3 +158,8 @@ AFTER platform_fee_payer;
 ALTER TABLE `stores`
 ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
 AFTER `qr_handle`;
+
+ALTER TABLE `reward`
+ADD COLUMN `goerone_discount_source` SMALLINT NOT NULL DEFAULT 0
+COMMENT '0=commission, 1=order amount'
+AFTER `goerone_discount_type`;

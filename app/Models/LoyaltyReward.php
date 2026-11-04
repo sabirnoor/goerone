@@ -29,13 +29,14 @@ class LoyaltyReward extends Model
     /** Deal fields only admin can see/set on store-created rewards. */
     public const ADMIN_ONLY_FIELDS = [
         'rewardtype', 'rewardvalue', 'max_reward_value',
-        'custvalue', 'ownervalue', 'maxdiscount_slabs', 'goerone_discount_type',
+        'custvalue', 'ownervalue', 'maxdiscount_slabs', 'goerone_discount_type', 'goerone_discount_source',
     ];
 
     /** What a store-created row holds until admin fills them in. */
     public const ADMIN_FIELD_DEFAULTS = [
         'rewardtype' => 0, 'rewardvalue' => 0, 'max_reward_value' => 0,
         'custvalue' => 0, 'ownervalue' => 0, 'maxdiscount_slabs' => '[]', 'goerone_discount_type' => 0,
+        'goerone_discount_source' => 0,
     ];
 
     /**
@@ -45,6 +46,13 @@ class LoyaltyReward extends Model
     public const DISCOUNT_GOERONE = 0;
     public const DISCOUNT_STORE   = 1;
     public const DISCOUNT_BOTH    = 2;
+
+    /**
+     * reward.goerone_discount_source: who funds the GoerOne customer discount.
+     *   0 = paid out of GoerOne's commission (default), 1 = paid out of the order amount.
+     */
+    public const DISCOUNT_SOURCE_COMMISSION = 0;
+    public const DISCOUNT_SOURCE_ORDER      = 1;
 
     public static function goeroneEnabled($value): bool
     {
@@ -469,6 +477,7 @@ class LoyaltyReward extends Model
             'reward.maxdiscount_slabs',
             'reward.discount_enabled',
             'reward.goerone_discount_type',
+            'reward.goerone_discount_source',
             'reward.store_disc_type',
             'reward.store_disc_value',
             'reward.store_maxdiscount_slabs'
@@ -831,6 +840,7 @@ class LoyaltyReward extends Model
             'ownervalue'        => $root->ownervalue,
             'discount_enabled'  => $root->discount_enabled,
             'goerone_discount_type' => $root->goerone_discount_type,
+            'goerone_discount_source' => $root->goerone_discount_source,
             'maxdiscount_slabs' => $root->getRawOriginal('maxdiscount_slabs'),
         ]);
         }

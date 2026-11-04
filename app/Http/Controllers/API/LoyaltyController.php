@@ -1599,6 +1599,7 @@ class LoyaltyController extends Controller
                     // Admin sends it directly; a store user can only switch its own (store) part on or off.
                     $custValue = 0.0;
                     $goeroneDiscType = 0;         // 0 = percentage, 1 = fixed
+                    $goeroneDiscSource = LoyaltyReward::DISCOUNT_SOURCE_COMMISSION; // 0 = commission (default), 1 = order amount
                     $ownerValue = 0;          // GoerOne keeps the whole commission unless a customer discount is set
                     $storeDiscType = 0;
                     $storeDiscValue = 0.0;
@@ -1614,6 +1615,9 @@ class LoyaltyController extends Controller
 
                     if ($goeroneOn) {
                         $goeroneDiscType = (int) $request->goerone_discount_type === 1 ? 1 : 0;
+                        $goeroneDiscSource = (int) $request->goerone_discount_source === LoyaltyReward::DISCOUNT_SOURCE_ORDER
+                            ? LoyaltyReward::DISCOUNT_SOURCE_ORDER
+                            : LoyaltyReward::DISCOUNT_SOURCE_COMMISSION;
                         $custValue = (float) $request->custvalue;
                         if ($custValue <= 0) {
                             return $fail('Enter the customer discount.');
@@ -1737,6 +1741,7 @@ class LoyaltyController extends Controller
                                 'maxdiscount_slabs' => json_encode($slabs),
                                 'discount_enabled'  => $discountEnabled,
                                 'goerone_discount_type' => $goeroneDiscType,
+                                'goerone_discount_source' => $goeroneDiscSource,
                                 'store_disc_type'   => $storeDiscType,
                                 'store_disc_value'  => $storeDiscValue,
                                 'store_maxdiscount_slabs' => json_encode($storeSlabs),
@@ -1968,6 +1973,7 @@ class LoyaltyController extends Controller
                                 'ownervalue'        => $ownerValue,
                                 'discount_enabled'  => $discountEnabled,
                                 'goerone_discount_type' => $goeroneDiscType,
+                                'goerone_discount_source' => $goeroneDiscSource,
                                 'maxdiscount_slabs' => json_encode($slabs),
                             ]);
                         }
