@@ -179,6 +179,10 @@ Route::middleware('auth:store')->group(function () {
     Route::get('/store/profile', [StoreAuthController::class, 'profile']);
 });
 Route::middleware('apiKey')->group(function () {
+    Route::prefix('sms')->group(function () {
+        Route::post('/sendotp', [MessageController::class, 'sendOTP']);
+        Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
+    });
     Route::prefix("payment")->group(function () {
         Route::any('/scan-qrcode', [ScanPayController::class, 'scanQrcode'])->name('scan-qrcode');
         Route::any('/scan-pay', [ScanPayController::class, 'scanPay'])->name('scan-pay');
