@@ -52,6 +52,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/toggle-status', [StoreController::class, 'toggleStatus']);
     });
 
+    Route::post('/get-staff', [StoreController::class, 'getActiveStaffForRM']);
+
     Route::prefix("loyalty")->group(function () {
         Route::post('program', [LoyaltyController::class, 'getLoyaltyProgram']);
         Route::post('loyalty_card', [LoyaltyController::class, 'loyaltyCard']);

@@ -172,3 +172,8 @@ ADD COLUMN `bank_name` VARCHAR(150) NULL,
 ADD COLUMN `bank_branch` VARCHAR(150) NULL,
 ADD COLUMN `bank_account_type` VARCHAR(30) NULL COMMENT 'savings, current, salary, nri, fixed_deposit, recurring_deposit',
 ADD COLUMN `bank_cancelled_cheque` VARCHAR(255) NULL;
+
+ALTER TABLE `stores`
+ADD COLUMN `relation_manager` BIGINT UNSIGNED NULL
+AFTER `bank_cancelled_cheque`,
+ADD INDEX `stores_relation_manager_index` (`relation_manager`);

@@ -96,7 +96,7 @@ class StoreController extends Controller
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
                 $result = Store::select('stores.*', 'stores.lat as latitude', 'stores.lon as longitude', 'mst_country.name as name', 'static_cities.fullRegionName')
-                    ->with('images')
+                    ->with(['images', 'relationshipManager:id,name,mobile,countrycode'])
                     ->leftjoin('static_cities', 'stores.city', '=', 'static_cities.id')
                     ->leftjoin('mst_country', 'stores.country', '=', 'mst_country.id')
                     ->where(function ($query) use ($user) {
@@ -198,6 +198,8 @@ class StoreController extends Controller
                     'payment_enabled' => 'nullable|boolean',
                     'is_halal' => 'nullable|boolean',
                     'alcohol_allowed' => 'nullable|boolean',
+                    // Relationship Manager (users.id of the staff member), admin only
+                    'relation_manager' => 'nullable|integer|exists:users,id',
                     'food_type' => ['nullable', Rule::in(['veg', 'non_veg', 'both'])],
                     // platform fee (percentage) – admin only, see below
                     'platform_fee' => 'nullable|numeric|min:0|max:100',
@@ -393,6 +395,11 @@ class StoreController extends Controller
                     $storeData['platform_fee_payer'] = $request->filled('platform_fee_payer')
                         ? $request->platform_fee_payer
                         : 'store';
+
+                    // Relationship Manager: admin only. Empty value clears the assignment.
+                    $storeData['relation_manager'] = $request->filled('relation_manager')
+                        ? (int) $request->relation_manager
+                        : null;
                 }
 
                 // Bank details: only a store save touches them. An admin save leaves the stored values alone.
@@ -1037,5 +1044,23 @@ class StoreController extends Controller
         } catch (\Throwable $th) {
             return $this->jsonError($th->getMessage());
         }
+    }
+    
+    public function getActiveStaffForRM(Request $request)
+    {
+        $user = $request->user();
+        return User::select('users.id','users.name','users.mobile', 'users.email', 'users.UserType')
+            ->where('users.active', 1)
+            ->where('users.UserType', 4)
+            ->where(function ($query) use ($user) {
+                if ($user->UserType == 1) {
+                    $query->where('users.AgencyID', $user->id);
+                } else {
+                    $query->where('users.UserSysId', $user->id);
+                }
+            })
+            ->orderBy('users.created_at', 'DESC')
+            ->get()
+            ->toArray();
     }
 }

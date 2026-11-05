@@ -371,4 +371,5 @@ class Users extends Model
 
         return $result;
     }
+
 }

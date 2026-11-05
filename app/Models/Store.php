@@ -36,6 +36,7 @@ class Store extends Authenticatable
         'bank_branch',
         'bank_account_type',
         'bank_cancelled_cheque',
+        'relation_manager',
     ];
 
     protected $hidden = [
@@ -52,6 +53,7 @@ class Store extends Authenticatable
         'alcohol_allowed' => 'boolean',
         'platform_fee' => 'float',
         'is_active' => 'boolean',
+        'relation_manager' => 'integer',
     ];
 
     /** Allowed values for stores.bank_account_type */
@@ -68,6 +70,12 @@ class Store extends Authenticatable
     public static function makeQrHandle($storeId): string
     {
         return 'store-' . (int) $storeId . '@goerone';
+    }
+
+    /** Relationship Manager (a staff user) assigned to this store by admin */
+    public function relationshipManager()
+    {
+        return $this->belongsTo(User::class, 'relation_manager');
     }
 
     public function settlements()

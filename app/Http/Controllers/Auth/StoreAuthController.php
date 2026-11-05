@@ -170,6 +170,11 @@ class StoreAuthController extends Controller
                 'message' => 'This store is inactive. Please contact support.',
             ]);
         }
+
+        // Only the Relationship Manager assigned to this store
+        $store->store_relation_manager = $store->relation_manager
+            ? User::select('id', 'name', 'mobile', 'email', 'countrycode')->find($store->relation_manager)
+            : null;
         
         $token = $store->createToken('store-token')->plainTextToken;
 
