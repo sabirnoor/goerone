@@ -7,13 +7,16 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Helpers\Helper;
 use App\Http\Resources\Voucher\CustomerVoucherResource;
 use App\Http\Resources\Voucher\VoucherOrderResource;
 use App\Models\CustomerVoucher;
+use App\Models\EmailRequest;
+use App\Models\incorporation_details;
 use App\Models\Store;
 use App\Models\VoucherOrder;
 use App\Models\Vouchers;
+use App\Services\EmailService;
+use App\Services\WhatsappNotification\GoeroneNotificationService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
@@ -355,6 +358,32 @@ class VouchersController extends Controller
     /** Also used by the frontend to poll payment status after returning from the gateway */
     public function order(Request $request, string $orderNo)
     {
+        // $ipAddress = $request->ip();
+        
+        // $companydetails = incorporation_details::where('UserSysId', $request->user()->id)->where('AgencyID', $request->user()->AgencyID)->first();
+        // $data = [
+        //         'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
+        //         'companydetails' => $companydetails,
+        //         'Sitename' => 'GoerOne',
+        //         'customer_phone' => '9650654575',
+        //         'staff_phone' => '9650654575',
+        //         'customer'       => 'Umar Akmal',
+        //     ];
+            // $customeremail = 'umarakmal0712@gmail.com';
+            // $subject = 'Test Notification - GoerOne';
+            // $html = view('emails.test', $data)->render();
+            // $emailRequest = app(EmailService::class)->sendEmail(
+            //                 $request->user(),
+            //                 $customeremail,
+            //                 $subject,
+            //                 $html,
+            //                 $ipAddress
+            //             );
+
+        // $only = $request->user()->agency->WhatsAppAllowed == 1 ? ['customer', 'staff'] : ['customer'];
+
+        // GoeroneNotificationService::notify('withdrawal_request', $request->user(), $data,reference: 'abcdef', only: $only);
+
         $order = VoucherOrder::with(['items', 'customerVouchers.orderItem'])
             ->where('customer_id', $request->user()->id)
             ->where('order_no', $orderNo)

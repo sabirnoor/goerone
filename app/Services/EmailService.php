@@ -75,16 +75,20 @@ class EmailService
      */
     protected function sendViaElasticApi(User $user, string $toEmail, string $subject, string $html): void
     {
+        $emailkey = '';
         if (empty($user->emailkey)) {
-            throw new \Exception('Elastic Email API key is not configured for this user.');
+            $emailkey = env('ELASTIC_EMAIL_API_KEY');
+            //throw new \Exception('Elastic Email API key is not configured for this user.');
+        } else {
+            $emailkey = $user->emailkey;
         }
 
         // Must be a sender/domain verified under this client's Elastic account
         $fromAddress = 'sabir@ozilconnect.com'; //env('MAIL_FROM_ADDRESS'); // TODO: swap for the client's own verified sender
-        $fromName    = str_replace(['<', '>', '"'], '', $user->details->agencyName);
+        $fromName    = str_replace(['<', '>', '"'], '', $user->details->agencyName ?? '');
 
         $response = Http::withHeaders([
-            'X-ElasticEmail-ApiKey' => $user->emailkey,
+            'X-ElasticEmail-ApiKey' => $emailkey,
         ])
             ->timeout(30)
             ->acceptJson()

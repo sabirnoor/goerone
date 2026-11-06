@@ -162,6 +162,14 @@ function TypeOfPromoCode()
         7 => "All",
     ];
 }
+
+function meta_app_secret()
+{
+    $AgencyID = (auth()->user()->UserType == 1) ? auth()->user()->id : auth()->user()->AgencyID;
+    $AgencyDetails = Users::getAgencyDetail($AgencyID);
+    return $AgencyDetails->META_APP_SECRET ?? config('services.meta.app_secret');
+}
+
 function cleanImageName($originalName)
 {
     // Remove any path information
