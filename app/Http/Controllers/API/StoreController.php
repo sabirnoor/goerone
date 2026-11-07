@@ -571,43 +571,42 @@ class StoreController extends Controller
     public function search(Request $request)
     {
         try {
-            $rules = [
-                'lat'      => 'required|numeric|between:-90,90',
-                'lon'      => 'required|numeric|between:-180,180',
-                'radius'   => 'nullable|numeric|min:0.1|max:100',
-                'category' => 'nullable|string|max:191',
-                'limit'    => 'nullable|integer|min:1|max:50',
-                'offset'   => 'nullable|integer|min:0',
-            ];
+        $rules = [
+            'lat'      => 'required|numeric|between:-90,90',
+            'lon'      => 'required|numeric|between:-180,180',
+            'radius'   => 'nullable|numeric|min:0.1|max:100',
+            'category' => 'nullable|string|max:191',
+            'limit'    => 'nullable|integer|min:1|max:50',
+            'offset'   => 'nullable|integer|min:0',
+        ];
 
-            $validator = Validator::make($request->all(), $rules);
+        $validator = Validator::make($request->all(), $rules);
 
-            if ($validator->fails()) {
-                return $this->jsonError(
-                    $validator->errors()->first(),
-                    422
-                );
-            }
+        if ($validator->fails()) {return $this->jsonError( $validator->errors()->first(), 422);}
 
-            $lat = (float) $request->lat;
-            $lon = (float) $request->lon;
+        $lat = (float) $request->lat;
+        $lon = (float) $request->lon;
 
-            // If radius is not passed, default to 50 KM.
-            $radius = $request->filled('radius') ? (float) $request->radius : 50;
+        // If radius is not passed, default to 50 KM.
+        $radius = $request->filled('radius') ? (float) $request->radius : 50;
+        $category = trim($request->category ?? '');
+        $limit = (int) ($request->limit ?? 15);
+        $offset = (int) ($request->offset ?? 0);
+        $user = $request->user();
+        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
 
-            $category = trim($request->category ?? '');
+        $membershipProgramId = null;
 
-            $limit = (int) ($request->limit ?? 15);
+        if ((int) $user->UserType !== 1) {
+            $membershipProgramId = DB::table('user_card')
+                ->join('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                ->where('user_card.user_id', $user->id)
+                ->where('user_card.AgencyID', $AgencyID)
+                ->where('user_card.status', 'active')
+                ->value('loyalty_card.program_id');
+        }
 
-            $offset = (int) ($request->offset ?? 0);
-
-            $user = $request->user();
-
-            $AgencyID = $user->UserType == 1
-                ? $user->id
-                : $user->AgencyID;
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Bounding Box
          * ---------------------------------------------------------
@@ -616,65 +615,60 @@ class StoreController extends Controller
          * The actual radius is still checked using Haversine below.
          */
 
-            $latDelta = $radius / 111.0;
-            $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
-            $lonDelta = $radius / (111.0 * $cosLat);
-            $minLat = max(-90, $lat - $latDelta);
-            $maxLat = min(90, $lat + $latDelta);
-            $minLon = $lon - $lonDelta;
-            $maxLon = $lon + $lonDelta;
+        $latDelta = $radius / 111.0;
+        $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
+        $lonDelta = $radius / (111.0 * $cosLat);
+        $minLat = max(-90, $lat - $latDelta);
+        $maxLat = min(90, $lat + $latDelta);
+        $minLon = $lon - $lonDelta;
+        $maxLon = $lon + $lonDelta;
 
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Base Query
          * ---------------------------------------------------------
          */
 
-            $query = Store::query()
-                ->select([
-                    'stores.id',
-                    'stores.store_name',
-                    'stores.store_logo',
-                    'stores.address',
-                    'stores.description',
-                    'stores.vendor_category',
-                    'stores.lat',
-                    'stores.lon',
-                    'stores.placeId',
-                    'stores.city',
-                    'stores.is_halal',
-                    'stores.food_type',
-                    'stores.alcohol_allowed',
-                ])
-                ->whereNotNull('stores.lat')
-                ->whereNotNull('stores.lon')
-                ->where('stores.is_active', 1) // inactive stores are never shown in search
-                ->where('stores.AgencyID', $AgencyID)
-                ->whereBetween('stores.lat', [$minLat, $maxLat])
-                ->whereBetween('stores.lon', [$minLon, $maxLon]);
+        $query = Store::query()
+            ->select([
+                'stores.id',
+                'stores.store_name',
+                'stores.store_logo',
+                'stores.address',
+                'stores.description',
+                'stores.vendor_category',
+                'stores.lat',
+                'stores.lon',
+                'stores.placeId',
+                'stores.city',
+                'stores.is_halal',
+                'stores.food_type',
+                'stores.alcohol_allowed',
+            ])
+            ->whereNotNull('stores.lat')
+            ->whereNotNull('stores.lon')
+            ->where('stores.is_active', 1) // inactive stores are never shown in search
+            ->where('stores.AgencyID', $AgencyID)
+            ->whereBetween('stores.lat', [$minLat, $maxLat])
+            ->whereBetween('stores.lon', [$minLon, $maxLon]);
 
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Category Filter
          * ---------------------------------------------------------
          */
 
-            if ($category !== '') {
-                $query->where('stores.vendor_category', $category);
-            }
+        if ($category !== '') { $query->where('stores.vendor_category', $category);}
 
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Exact Haversine Distance
          * ---------------------------------------------------------
          *
          * Distance is returned as distance_km.
          */
-            $query->selectRaw($this->haversineExpression('stores.lat', 'stores.lon'), [$lat, $lon, $lat]);
-            /*
+        $query->selectRaw($this->haversineExpression('stores.lat', 'stores.lon'), [$lat, $lon, $lat]);
+         /*
          * ---------------------------------------------------------
          * Exact Radius Filter
          * ---------------------------------------------------------
@@ -683,8 +677,8 @@ class StoreController extends Controller
          * This ensures stores are actually within
          * the requested radius.
          */
-            $query->having('distance_km', '<=', $radius);
-            /*
+        $query->having('distance_km', '<=', $radius);
+         /*
          * ---------------------------------------------------------
          * Sorting
          * ---------------------------------------------------------
@@ -693,29 +687,27 @@ class StoreController extends Controller
          * ID provides stable ordering when distances are equal.
          */
 
-            $query->orderBy('distance_km', 'asc')->orderBy('stores.id', 'asc');
-            /*
+        $query->orderBy('distance_km', 'asc')->orderBy('stores.id', 'asc');
+         /*
          * ---------------------------------------------------------
          * Pagination
          * ---------------------------------------------------------
          */
 
-            $rows = $query->offset($offset)->limit($limit + 1)->get();
-            $hasMore = $rows->count() > $limit;
+        $rows = $query->offset($offset)->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
 
-            if ($hasMore) {
-                $rows = $rows->take($limit);
-            }
+        if ($hasMore) { $rows = $rows->take($limit);}
 
-            /*
+         /*
          * ---------------------------------------------------------
          * Categories
          * ---------------------------------------------------------
          */
 
-            $categories = collect(self::VENDOR_CATEGORIES)->values();
+        $categories = collect(self::VENDOR_CATEGORIES)->values();
 
-            /*
+        /*
         * ---------------------------------------------------------
         * No Stores Found
         * ---------------------------------------------------------
@@ -726,60 +718,50 @@ class StoreController extends Controller
         * Only show the message on the first page.
         */
 
-            if ($rows->isEmpty() && $offset === 0) {
-                $message = $category !== '' ? self::NO_CATEGORY_MESSAGE : self::NO_SERVICE_MESSAGE;
+        if ($rows->isEmpty() && $offset === 0) {
+            $message = $category !== '' ? self::NO_CATEGORY_MESSAGE : self::NO_SERVICE_MESSAGE;
 
-                return $this->jsonSuccess(
-                    $message,
-                    [
-                        'items' => [],
-                        'nextOffset' => null,
-                        'radiusKm' => $radius,
-                        'categories' => $categories,
-                    ]
-                );
-            }
+            return $this->jsonSuccess(
+                $message,
+                [
+                    'items' => [],
+                    'nextOffset' => null,
+                    'radiusKm' => $radius,
+                    'categories' => $categories,
+                ]
+            );
+        }
 
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Rewards
          * ---------------------------------------------------------
          */
 
-            $rewardMap = LoyaltyReward::getBestRewardsForStores(
-                $rows->pluck('id')->toArray(),
-                $AgencyID
-            );
+        $rewardMap = LoyaltyReward::getBestRewardsForStores(
+            $rows->pluck('id')->toArray(),
+            $AgencyID, $membershipProgramId
+        );
 
-
-            /*
+         /*
          * ---------------------------------------------------------
          * Format Stores
          * ---------------------------------------------------------
          */
 
-            $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
+        $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
 
-            /*
-         * ---------------------------------------------------------
-         * Response
-         * ---------------------------------------------------------
-         */
-
-            return $this->jsonSuccess(
-                'Stores fetched successfully.',
-                [
-                    'items' => $items,
-                    'nextOffset' => $hasMore ? $offset + $limit : null,
-                    'radiusKm' => $radius,
-                    'categories' => $categories,
-                ]
-            );
+        return $this->jsonSuccess(
+            'Stores fetched successfully.',
+            [
+                'items' => $items,
+                'nextOffset' => $hasMore ? $offset + $limit : null,
+                'radiusKm' => $radius,
+                'categories' => $categories,
+            ]
+        );
         } catch (\Throwable $th) {
-            return $this->jsonError(
-                $th->getMessage()
-            );
+        return $this->jsonError( $th->getMessage() );
         }
     }
 

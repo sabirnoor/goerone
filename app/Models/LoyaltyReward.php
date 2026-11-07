@@ -453,7 +453,7 @@ class LoyaltyReward extends Model
      * @param int|null $AgencyID
      * @return \Illuminate\Support\Collection keyed by stores_id
      */
-   public static function getBestRewardsForStores(array $storeIds, $AgencyID = null)
+   public static function getBestRewardsForStores(array $storeIds, $AgencyID = null, $membershipProgramId = null)
     {
         if (empty($storeIds)) {
             return collect();
@@ -499,6 +499,11 @@ class LoyaltyReward extends Model
 
         if (!empty($AgencyID)) {
             $query->where('reward.AgencyID', $AgencyID);
+        }
+
+        // Membership customer: only their membership program's rewards.
+        if (!empty($membershipProgramId)) {
+            $query->where('reward.program_id', $membershipProgramId);
         }
 
         $rewards = $query->get();
