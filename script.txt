@@ -177,3 +177,21 @@ ALTER TABLE `stores`
 ADD COLUMN `relation_manager` BIGINT UNSIGNED NULL
 AFTER `bank_cancelled_cheque`,
 ADD INDEX `stores_relation_manager_index` (`relation_manager`);
+
+CREATE TABLE `legal_policies` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `AgencyID` BIGINT UNSIGNED NOT NULL,
+    `UserSysId` BIGINT UNSIGNED NULL,
+    `updated_by` BIGINT UNSIGNED NULL,
+    `type` VARCHAR(30) NOT NULL,
+    `title` VARCHAR(255) NULL,
+    `content` LONGTEXT NOT NULL,
+    `version` INT UNSIGNED NOT NULL DEFAULT 1,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `legal_policies_agency_type_unique` (`AgencyID`, `type`),
+    KEY `legal_policies_agencyid_index` (`AgencyID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
