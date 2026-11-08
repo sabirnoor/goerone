@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\AuthController;
 use App\Http\Controllers\API\EarningController;
+use App\Http\Controllers\LegalPolicyController;
 use App\Http\Controllers\API\LoyaltyController;
 use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
@@ -170,6 +171,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('commission/ledger',               [PerformanceReportController::class, 'commissionLedger']);
         Route::post('commission/export',               [PerformanceReportController::class, 'commissionExport']);
     });
+
+    Route::post('/legal/policy', [LegalPolicyController::class, 'fetch']);
+    Route::post('/legal/save', [LegalPolicyController::class, 'save']);
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::post('/store/register', [StoreAuthController::class, 'register']);
@@ -181,6 +185,7 @@ Route::middleware('auth:store')->group(function () {
     Route::get('/store/profile', [StoreAuthController::class, 'profile']);
 });
 Route::middleware('apiKey')->group(function () {
+    Route::get('/legal/public/{type}', [LegalPolicyController::class, 'publicShow']);
     Route::prefix('sms')->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
