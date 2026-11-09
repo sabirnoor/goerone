@@ -414,11 +414,11 @@ class WebhookController extends Controller
                         $bookingProcess = decryptData($udf7, $AgencyDetails->api_key);
                     }
                     $bookingProcess = json_decode($bookingProcess, 1);
-                    // pr($bookingProcess);
-                    // die;
-                    if ($udf2 == 1 && $Walletstatus == 1) { // Flight booking process
-                        Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
 
+                    if ($udf2 == 1 && $Walletstatus == 1) {
+                        Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
+                        pr($bookingProcess);
+                        die;
                         $URL = $this->API_URL . '/api/loyalty/redeem';
                         $response = HttpRequest($URL, $bookingProcess, $AgencyID, $newPlain);
                         $resultSet = json_decode($response, 1);

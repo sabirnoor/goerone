@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use Carbon\CarbonInterface;
 
 if (!function_exists('helper_test')) {
     function helper_test()
@@ -898,5 +899,84 @@ function calculateRewardDiscount(float $orderAmount, array $reward): array
         'store_discount'    => $store,
         'customer_discount' => $total,
         'final_amount'      => round($orderAmount - $total, 2),
+    ];
+}
+
+function getMembershipStatus($user): array
+{
+    $um = $user?->userMembership;
+
+    if (!$um) {
+        return [
+            'state'       => 'none',
+            'programId'   => null,
+            'program'     => null,
+            'programName' => null,
+            'cardNumber'  => null,
+        ];
+    }
+
+    $program      = $um->usercard?->loyaltyProgram;
+    $deactivation = $um->deactivation_date ? Carbon::parse($um->deactivation_date) : null;
+    $isExpired    = $um->status !== 'active' || ($deactivation && $deactivation->lt(now()));
+
+    return [
+        'state'            => $isExpired ? 'expired' : 'active',
+        'programId'        => $program?->program_id,
+        'program'          => $program,
+        'programName'      => $program?->program_name ?: 'Membership',
+        'cardNumber'       => $um->usercard?->card_number, // adjust field name if different
+        'planAmount'       => $program?->membership_type === 'paid'
+            ? (float) ($program->membership_amount ?? 0)
+            : 0,
+        'activationDate'   => $um->activation_date,
+        'deactivationDate' => $um->deactivation_date,
+        'pointsBalance'    => $um->points_balance,
+    ];
+}
+
+function getMembershipCredit($user, ?CarbonInterface $now = null): array
+{
+    $none = ['amount' => 0, 'daysLeft' => 0, 'totalDays' => 0, 'perDay' => 0];
+    $now ??= now();
+    $DAY_SECONDS = 86400;
+    $status = getMembershipStatus($user);
+
+    if (
+        ($status['state'] ?? null) !== 'active'
+        || !(($status['planAmount'] ?? 0) > 0)
+        || empty($status['deactivationDate'])
+    ) {
+        return $none;
+    }
+
+    try {
+        $end   = Carbon::parse($status['deactivationDate'])->getTimestamp();
+        $start = !empty($status['activationDate'])
+            ? Carbon::parse($status['activationDate'])->getTimestamp()
+            : null;
+    } catch (\Throwable $e) {
+        return $none;
+    }
+
+    $spanDays  = $start !== null ? (int) round(($end - $start) / $DAY_SECONDS) : 0;
+    $totalDays = $spanDays > 0 ? $spanDays : 365;
+
+    $daysLeft = (int) min(
+        $totalDays,
+        max(0, ceil(($end - $now->getTimestamp()) / $DAY_SECONDS))
+    );
+
+    if ($daysLeft <= 0) {
+        return $none;
+    }
+
+    $perDay = $status['planAmount'] / $totalDays;
+
+    return [
+        'amount'    => round($perDay * $daysLeft, 2),
+        'daysLeft'  => $daysLeft,
+        'totalDays' => $totalDays,
+        'perDay'    => round($perDay, 2),
     ];
 }

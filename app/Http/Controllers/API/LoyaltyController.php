@@ -186,20 +186,70 @@ class LoyaltyController extends Controller
                     $card_id = isset($UnAssignloyaltycard[0]['card_id']) ? $UnAssignloyaltycard[0]['card_id'] : 0;
                     $currentDate = Carbon::now()->format('Y-m-d H:i:s');
                     $twoMonthsLater = Carbon::now()->addMonths(12)->format('Y-m-d H:i:s');
-                    $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($LoyaltyProgram->membership_amount, 18);
-                    $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($LoyaltyProgram->membership_amount ?? 0));
+                    $membership_amount = $LoyaltyProgram->membership_amount ?? 0;
+
+                    $testUser = User::with('UserMembership.usercard')->where('id', $request->user()->id)->where('AgencyID', $AgencyID)
+                        ->whereIn('UserType', [0, 2])->first();
+                    $MembershipCredit = getMembershipCredit($testUser);
+                    $MemCrAMount = $MembershipCredit['amount'] ?? 0;
+                    if ($membership_amount >= $MemCrAMount) {
+                        $membership_amount = ($membership_amount - $MemCrAMount);
+                    }
+
+                    pr($membership_amount);
+                    $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($membership_amount, 18);
+                    $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($membership_amount ?? 0));
 
                     $TotalAmount = $TotalAmounts;
-                    $SubTotal = $LoyaltyProgram->membership_amount ?? 0;
-                    $DiscountSubTotal = $LoyaltyProgram->membership_amount ?? 0;
+                    $SubTotal = $membership_amount ?? 0;
+                    $DiscountSubTotal = $membership_amount ?? 0;
                     $TotalTaxAmount = $arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] ?? 0;
                     $ItemName = $LoyaltyProgram->program_name ?? 'Membership';
+                    $usereward = $request->ur ?? 0;
+
                     $Itemid = 0;
                     $mst_items = mst_items::where('name', 'like', '%' . $ItemName . '%')->where(function ($q) use ($AgencyID) {
                         $q->whereNull('AgencyID')
                             ->orWhere('AgencyID', $AgencyID);
                     })->first();
 
+                    if ($usereward == 1) {
+                        $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
+                        $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
+                        if ($points_to_redeem > $TotalAmount) {
+                            $points_to_redeem = $TotalAmount;
+                        }
+                        $points_to_redeem = $points_to_redeem;
+
+                        $RewardRequest = [
+                            "points" => ($points_to_redeem),
+                            "description" => 'Used on Loyalty Redeem',
+                            'AgencyID' => ($request->user()->UserType == 1) ? $request->user()->id : $request->user()->AgencyID,
+                            'UserSysId' =>  $request->user()->id,
+                            "payer_id" => $user->id,
+                            "payee_id" => $AgencyID,
+                            "RewardMode" => "Pay",
+                            "ReferenceNo" => $request->ref,
+                            'PlanType' => 10,
+                        ];
+
+                        $redemption = $this->rewardService->transferPoints($RewardRequest);
+                        $success = $redemption['success'] ?? 0;
+                        $message = isset($redemption['message']) ? $redemption['message'] : 0;
+                        if ($success == 1) {
+                            $TotalAmount = ($TotalAmount - ($points_to_redeem));
+                        }
+                        if ($success == 0) {
+                            DB::rollback();
+                            return response()->json([
+                                'status' => [
+                                    'success' => false,
+                                    'httpStatus' => 1016,
+                                ],
+                                'message' => $message,
+                            ]);
+                        }
+                    }
                     if ($TotalAmount > 0) {
                         $wallet = [
                             "customer_id" => $user->id,
@@ -429,22 +479,26 @@ class LoyaltyController extends Controller
                 ]);
             }
             $TotalReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)->where('stores_id', $accessToken->tokenable_id)->count();
-            // if ($TotalReddemPass > 0) {
-            //     return response()->json([
-            //         'status' => [
-            //             'success' => false,
-            //             'httpStatus' => 4001,
-            //         ],
-            //         'message' => 'Redemption already processed.'
-            //     ]);
-            // }
+            if ($TotalReddemPass > 0) {
+                return response()->json([
+                    'status' => [
+                        'success' => false,
+                        'httpStatus' => 4001,
+                    ],
+                    'message' => 'Redemption already processed.'
+                ]);
+            }
 
             $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
             $UserSysId = $request->user()->id;
             $Reward = LoyaltyReward::select('*')->where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)->first();
             $result = [];
+
             if (!empty($Reward)) {
                 $result = calculateRewardDiscount(($request->order_amount ?? 0), $Reward->toArray());
+            } else {
+                $Reward = LoyaltyReward::select('*')->where('AgencyID', $AgencyID)->where('isdefault', 1)->first();
+                $request->merge(['reward_id' => $Reward->reward_id ?? 0]);
             }
 
             // $dealtype = isset($Reward->dealtype) ? (int)$Reward->dealtype : 0;
@@ -495,14 +549,7 @@ class LoyaltyController extends Controller
 
             if (!empty($voucher_code)) {
                 $dsdsds = app(VoucherRedeemService::class)->validate($request->user(), $voucher_code, ($request->order_amount - $discountCust), $accessToken->tokenable_id, null);
-                // pr(($request->order_amount - $discountCust));
-                // pr($dsdsds);
             }
-            // pr($rewardEarns);
-            // pr($discountOwner);
-            // pr($discountCust);
-            // pr($Reward);
-            // die;
 
             $request->merge(['discount' => $discount]);
             $request->merge(['user_id' => $request->user()->id]);
@@ -594,8 +641,8 @@ class LoyaltyController extends Controller
             //}
 
             if ($verified) {
-                $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)
-                    ->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
+                // $checkReward = StoresMapping::where('AgencyID', $AgencyID)->where('reward_id', $request->reward_id)
+                //     ->where('stores_id', $accessToken->tokenable_id)->where('isdelete', 0)->first();
                 $stores_id = !empty($accessToken->tokenable_id) ? $accessToken->tokenable_id : 0;
 
                 if ($accessToken && $stores_id > 0) {
@@ -608,6 +655,7 @@ class LoyaltyController extends Controller
                                 $query->where('user_card.UserSysId', $user->id);
                             }
                         })->where('user_id', $request->user_id)->where('user_card.status', 'active')->where('card_id', $request->card_id)->exists();
+
                     if (!$cardExists) {
                         return response()->json([
                             'status' => [
@@ -725,20 +773,20 @@ class LoyaltyController extends Controller
                             'message' => $message,
                         ]);
                     }
-                    if (empty($checkReward)) {
-                        $this->StorePaymentcallback($request);
-                        DB::commit();
-                        return response()->json([
-                            'status' => [
-                                'success' => true,
-                                'httpStatus' => 200,
-                            ],
-                            'message' => 'Redemption processed successfully',
-                            'mep' => $request->mep ?? 0,
-                            'rdm' => $request->rdm ?? 0,
-                            'ref' => $request->ref ?? null,
-                        ], 200);
-                    }
+                    // if (empty($checkReward)) {
+                    //     $this->StorePaymentcallback($request);
+                    //     DB::commit();
+                    //     return response()->json([
+                    //         'status' => [
+                    //             'success' => true,
+                    //             'httpStatus' => 200,
+                    //         ],
+                    //         'message' => 'Redemption processed successfully',
+                    //         'mep' => $request->mep ?? 0,
+                    //         'rdm' => $request->rdm ?? 0,
+                    //         'ref' => $request->ref ?? null,
+                    //     ], 200);
+                    // }
                     // pr($request->all());
                     // pr($rewardEarns);
                     // pr($discountCust);
@@ -790,7 +838,6 @@ class LoyaltyController extends Controller
                                 !empty($referneceNo) ? $referneceNo : null,
                             ]
                         );
-
                         // Get the output parameters
                         $results = DB::select('SELECT @status as status, @message as message, @redemption_id as redemption_id');
                         $status = $results[0]->status;
@@ -849,15 +896,18 @@ class LoyaltyController extends Controller
                                 'ref' => $request->ref ?? null,
                             ], 200);
                         } else {
+                            DB::rollback();
                             return response()->json([
                                 'status' => [
                                     'success' => false,
                                     'httpStatus' => 400,
                                 ],
-                                'message' => $message
+                                'message' => $message,
+                                'results' => $results
                             ]);
                         }
                     } catch (\Exception $e) {
+                        DB::rollback();
                         return response()->json([
                             'status' => [
                                 'success' => false,
