@@ -27,7 +27,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::post('login', [AuthController::class, 'login']);
-Route::get('/', function (Request $request) {
+Route::get('/usertype', function (Request $request) {
     return print_r(UserType());
 });
 
