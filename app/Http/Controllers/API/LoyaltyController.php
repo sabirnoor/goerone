@@ -196,7 +196,6 @@ class LoyaltyController extends Controller
                         $membership_amount = ($membership_amount - $MemCrAMount);
                     }
 
-                    pr($membership_amount);
                     $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($membership_amount, 18);
                     $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($membership_amount ?? 0));
 
@@ -212,7 +211,6 @@ class LoyaltyController extends Controller
                         $q->whereNull('AgencyID')
                             ->orWhere('AgencyID', $AgencyID);
                     })->first();
-
                     if ($usereward == 1) {
                         $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
                         $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
@@ -232,7 +230,6 @@ class LoyaltyController extends Controller
                             "ReferenceNo" => $request->ref,
                             'PlanType' => 10,
                         ];
-
                         $redemption = $this->rewardService->transferPoints($RewardRequest);
                         $success = $redemption['success'] ?? 0;
                         $message = isset($redemption['message']) ? $redemption['message'] : 0;
@@ -250,10 +247,11 @@ class LoyaltyController extends Controller
                             ]);
                         }
                     }
+
                     if ($TotalAmount > 0) {
                         $wallet = [
                             "customer_id" => $user->id,
-                            "amount" => $TotalAmount,
+                            "amount" => round($TotalAmount, 2),
                             "RefrenceNo" => isset($request->ref) ? $request->ref : date('YmdHis'),
                             "PlanType" => 10,
                             "Remark" => "VIP Membership",

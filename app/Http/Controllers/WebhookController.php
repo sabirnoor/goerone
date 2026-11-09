@@ -417,8 +417,8 @@ class WebhookController extends Controller
 
                     if ($udf2 == 1 && $Walletstatus == 1) {
                         Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
-                        pr($bookingProcess);
-                        die;
+                        // pr($bookingProcess);
+                        // die;
                         $URL = $this->API_URL . '/api/loyalty/redeem';
                         $response = HttpRequest($URL, $bookingProcess, $AgencyID, $newPlain);
                         $resultSet = json_decode($response, 1);
