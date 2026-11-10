@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Services\EmailService;
+use App\Services\WhatsappNotification\GoeroneNotificationService;
 
 class LoyaltyController extends Controller
 {
@@ -875,6 +876,78 @@ class LoyaltyController extends Controller
                                 $this->rewardService->addPointsTemp($RewardInsert);
                             }
                             $this->StorePaymentcallback($request);
+
+                            // For Notification to customer and store 
+                            
+                            // if ((int) ($request->mep ?? 0) !== 1) {
+                            //     $notificationData = [
+                            //         'customer_name'       => $customer->name ?? 'Customer',
+                            //         'store_name'          => $store->name ?? '',
+                            //         'payment_amount'      => 'INR ' . number_format($payment->amount, 2),
+                            //         'payment_ref'         => $payment->reference,
+                            //         'payment_confirmed_at'=> optional($payment->paid_at)->format('d M Y, h:i A'),
+                            //         // 'app_url'             => config('app.url'),
+                            //         // 'dashboard_url'       => config('app.url'),
+                            //     ];
+
+                            //     $ipAddress = $request->ip();
+
+                            //     // Customer email
+                            //     if (!empty($customer->email)) {
+                            //         $html = view('emails.store_payment_customer', $notificationData)->render();
+
+                            //         app(EmailService::class)->sendEmail(
+                            //             $customer,
+                            //             $customer->email,
+                            //             'Payment Successful - GoerOne',
+                            //             $html,
+                            //             $ipAddress
+                            //         );
+                            //     }
+
+                            //     // Merchant email
+                            //     if (!empty($storeOwner->email)) {
+                            //         $merchantHtml = view('emails.store_payment_merchant', $notificationData)->render();
+
+                            //         app(EmailService::class)->sendEmail(
+                            //             $storeOwner,
+                            //             $storeOwner->email,
+                            //             'Payment Received - ' . $store->name,
+                            //             $merchantHtml,
+                            //             $ipAddress
+                            //         );
+                            //     }
+
+                            //     // Customer WhatsApp
+                            //     GoeroneNotificationService::notify(
+                            //         'goerone_store_payment_customer',
+                            //         $customer,
+                            //         $notificationData,
+                            //         reference: $payment->reference,
+                            //         only: ['customer']
+                            //     );
+
+                            //     // Merchant WhatsApp
+                            //     GoeroneNotificationService::notify(
+                            //         'goerone_store_payment_partner',
+                            //         $storeOwner,
+                            //         $notificationData,
+                            //         reference: $payment->reference,
+                            //         only: ['customer']
+                            //     );
+                            //     // Customer WhatsApp notification
+                            //     // Call your existing customer WhatsApp service here.
+
+                            //     // Customer email notification
+                            //     // Call your existing customer email service here.
+
+                            //     // Store WhatsApp notification
+                            //     // Call your existing store WhatsApp service here.
+
+                            //     // Store email notification
+                            //     // Call your existing store email service here.
+                            // }
+
                             return response()->json([
                                 'status' => [
                                     'success' => true,
