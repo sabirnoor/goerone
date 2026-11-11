@@ -477,6 +477,7 @@ class GoeroneNotificationService
                 $raw = match ($recipient['type']) {
                     'customer' => $this->data['customer_phone'] ?? '',
                     'staff'    => $this->data['staff_phone'] ?? config('whatsapp_notifications.staff_phone', ''),
+                    'store'    => $this->data['store_phone'] ?? '',
                     default    => '',
                 };
                 $phone = $this->normalisePhone((string) $raw);

@@ -87,4 +87,9 @@ class Store extends Authenticatable
     {
         return $this->hasMany(StoreImage::class)->orderBy('sort_order');
     }
+
+    public function agencyUser()
+    {
+        return $this->belongsTo(User::class, 'AgencyID');
+    }
 }

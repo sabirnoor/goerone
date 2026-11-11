@@ -920,8 +920,6 @@ class AuthController extends Controller
 
     public function fetchcustomer(Request $request)
     {
-
-
         try {
             if ($request->isMethod('post')) {
                 $userIds = isset($request->userIds) ? $request->userIds : [];
@@ -938,7 +936,9 @@ class AuthController extends Controller
                 })->where(function ($query) {  // This ensures both conditions are grouped
                     $query->where('UserType', 0)
                         ->orWhere('UserType', 2);
-                })->where(function ($query) use ($keyword) {
+                })
+                ->where('GoerOne', 1)
+                ->where(function ($query) use ($keyword) {
                     if ($keyword !== "null" && !empty(trim($keyword))) {
                         $query->where('name', "like", "%" . $keyword . "%");
                         $query->orWhere('fname', "like", "%" . $keyword . "%");
