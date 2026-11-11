@@ -2,6 +2,8 @@
 
 
 use App\Services\WhatsappNotification\Mappers\MembershipPurchasedCustomerMapper;
+use App\Services\WhatsappNotification\Mappers\StorePaymentCustomerMapper;
+use App\Services\WhatsappNotification\Mappers\StorePaymentPartnerMapper;
 use App\Services\WhatsappNotification\Mappers\WithdrawalRequestCustomerMapper;
 use App\Services\WhatsappNotification\Mappers\WithdrawalRequestStaffMapper;
 
@@ -44,6 +46,17 @@ return [
                 'customer' => MembershipPurchasedCustomerMapper::class,
             ],
         ],
-
+        'goerone_store_payment_partner' => [
+            'source'     => 'goerone_store_payment_partner',
+            'recipients' => [
+                'customer' => StorePaymentPartnerMapper::class,
+            ],
+        ],
+        'goerone_store_payment_customer' => [
+            'source'     => 'goerone_store_payment_customer',
+            'recipients' => [
+                'customer' => StorePaymentCustomerMapper::class,
+            ],
+        ],
     ],
 ];

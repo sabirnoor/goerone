@@ -921,7 +921,7 @@ class LoyaltyController extends Controller
                             //     // Customer WhatsApp
                             //     GoeroneNotificationService::notify(
                             //         'goerone_store_payment_customer',
-                            //         $customer,
+                            //         $request->user(),
                             //         $notificationData,
                             //         reference: $payment->reference,
                             //         only: ['customer']
