@@ -61,8 +61,10 @@ class VouchersController extends Controller
                 'max_discount_value' => 'required|numeric',
                 'min_purchase_value' => 'required|numeric',
                 'redemption_type' => 'required|in:1,2,3', // 1 = online, 2 = offline, 3 = both
-                'customer_share' => 'required|numeric|min:0|max:100',
-                'owner_share' => 'required|numeric|min:0|max:100',
+                // commission to GoerOne at redeem - optional, admin only (0 = percentage, 1 = fixed)
+                'comission_type' => 'nullable|in:0,1',
+                'comission_value' => 'nullable|numeric|min:0',
+                'comission_source' => 'nullable|in:0,1', // 0 = paid from voucher amount, 1 = paid from order amount
             ]);
 
             $validator->after(function ($v) use ($request, $membershipIds) {
@@ -85,9 +87,11 @@ class VouchersController extends Controller
                     }
                 }
 
-                if (! $errs->hasAny(['customer_share', 'owner_share'])) {
-                    if (abs(((float) $request->customer_share + (float) $request->owner_share) - 100) > 0.001) {
-                        $errs->add('customer_share', 'Customer share and owner share must total 100%');
+                // commission is only validated for admin; store input is ignored
+                $u = $request->user();
+                if (isset($u->UserType) && $u->UserType == 1 && ! $errs->hasAny(['comission_type', 'comission_value'])) {
+                    if ((int) $request->comission_type === 0 && (float) $request->comission_value > 100) {
+                        $errs->add('comission_value', 'Commission percentage cannot be more than 100%');
                     }
                 }
             });
@@ -143,8 +147,9 @@ class VouchersController extends Controller
                                     'store_id' => $vl['id'],
                                     'customer_type' => $request->customer_type,
                                     'redemption_type' => (int) $request->redemption_type,
-                                    'customer_share' => $request->customer_share,
-                                    'owner_share' => $request->owner_share,
+                                    // discount split removed: customer always gets the full purchase discount
+                                    'customer_share' => 100,
+                                    'owner_share' => 0,
                                     'AgencyID' => $AgencyID,
                                     // 'UserSysId' => $UserSysId,
                                     'no_of_voucher' => $request->no_of_voucher,
@@ -162,6 +167,13 @@ class VouchersController extends Controller
                                     'valid_to' => (!empty($request->valid_to) && $request->valid_from != "null") ? $request->valid_to : null,
                                 ];
 
+                                // Commission to GoerOne at redeem: only admin can set it (store edits never touch it)
+                                if ($isAgency) {
+                                    $dataSet['comission_type'] = (int) ($request->comission_type ?? 0);
+                                    $dataSet['comission_value'] = ($request->comission_value !== null && $request->comission_value !== '') ? $request->comission_value : 0;
+                                    $dataSet['comission_source'] = (int) ($request->comission_source ?? 0);
+                                }
+
                                 // New vouchers from stores require approval.
                                 // Existing approved vouchers can be deactivated directly by the store.
                                 if ($approvalRequired && $voucher_id == 0) {
@@ -174,6 +186,8 @@ class VouchersController extends Controller
                                     // Set UserSysId only when creating a new voucher
                                     $dataSet['UserSysId'] = $UserSysId;
                                     $dataSet['created_by_store'] = $createdByStore;
+                                    // 0 = admin funded discount, 1 = store funded discount (set once, never changed on edit)
+                                    $dataSet['discount_source'] = $isAgency ? 0 : 1;
                                     $dataSet['approval_status'] = $isAgency ? 1 : 0;
 
                                     $Entry = Vouchers::create($dataSet);
@@ -588,33 +602,5 @@ class VouchersController extends Controller
         }
 
         return ['status' => ['success' => true, 'httpStatus' => 200], 'message' => $msg];
-    }
-
-    public function approvalList(Request $request)
-    {
-        $user = $request->user();
-        if (! (isset($user->UserType) && $user->UserType == 1)) {
-            return response()->json([
-                'status' => ['success' => false, 'httpStatus' => 403],
-                'message' => 'Only admin can view voucher approvals',
-            ], 403);
-        }
-
-        try {
-            $perPage = ($request->per_page > 0) ? (int) $request->per_page : 25;
-            $status  = in_array((int) $request->status, [0, 1, 2], true) ? (int) $request->status : 0;
-            $result  = Vouchers::getApprovals($user, $perPage, $status);
-
-            return [
-                'status' => ['success' => true, 'httpStatus' => 200],
-                'data' => $result,
-                'message' => 'SUCCESS',
-            ];
-        } catch (\Exception $e) {
-            return [
-                'status' => ['success' => false, 'httpStatus' => 500],
-                'message' => $e->getMessage(),
-            ];
-        }
     }
 }

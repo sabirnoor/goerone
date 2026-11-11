@@ -49,7 +49,7 @@ return [
         'goerone_store_payment_partner' => [
             'source'     => 'goerone_store_payment_partner',
             'recipients' => [
-                'customer' => StorePaymentPartnerMapper::class,
+                'store' => StorePaymentPartnerMapper::class,
             ],
         ],
         'goerone_store_payment_customer' => [

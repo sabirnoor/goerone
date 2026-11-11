@@ -43,6 +43,10 @@ class Vouchers extends Model
         'reject_reason',
         'reviewed_by',
         'reviewed_at',
+        'discount_source',
+        'comission_type',
+        'comission_value',
+        'comission_source',
     ];
 
     protected $casts = [
@@ -53,6 +57,7 @@ class Vouchers extends Model
         'required_value' => 'decimal:2',
         'customer_share' => 'decimal:2',
         'owner_share' => 'decimal:2',
+        'comission_value' => 'decimal:2',
     ];
     /**
      * Relationships
@@ -181,6 +186,10 @@ class Vouchers extends Model
             'vouchers.owner_share',
             'vouchers.sold_count',
             'vouchers.created_by_store',
+            'vouchers.discount_source',
+            'vouchers.comission_type',
+            'vouchers.comission_value',
+            'vouchers.comission_source',
             'cs.store_name as created_by_store_name',
             'stores.store_name',
             'stores.email as store_email',
@@ -443,47 +452,6 @@ class Vouchers extends Model
         return self::withMemberships(
             $paginator,
             $userMembershipAmount
-        );
-    }
-
-    /** Admin approval queue. $status: 0 = pending, 1 = approved (reviewed), 2 = rejected */
-    public static function getApprovals($User, $perPage, $status = 0)
-    {
-        $q = Vouchers::select(
-            'vouchers.id',
-            'vouchers.voucher_name',
-            'vouchers.voucher_price',
-            DB::raw('DATE_FORMAT(vouchers.created_at, "%d %b, %Y") as createdDate'),
-            'vouchers.store_id',
-            'vouchers.no_of_voucher',
-            'vouchers.discount_type',
-            'vouchers.discount_value',
-            'vouchers.max_discount_value',
-            'vouchers.min_purchase_value',
-            'vouchers.redemption_type',
-            'vouchers.customer_share',
-            'vouchers.owner_share',
-            'vouchers.valid_from',
-            'vouchers.valid_to',
-            'vouchers.terms_condition',
-            'vouchers.is_active',
-            'vouchers.approval_status',
-            'vouchers.reject_reason',
-            'vouchers.reviewed_at',
-            'stores.store_name',
-            'stores.email as store_email'
-        )
-            ->leftJoin('stores', 'stores.id', '=', 'vouchers.store_id')
-            ->where('vouchers.AgencyID', $User->id)
-            ->where('vouchers.approval_status', $status);
-
-        // approved tab = only vouchers that actually went through review
-        if ($status === 1) {
-            $q->whereNotNull('vouchers.reviewed_at');
-        }
-
-        return self::withMemberships(
-            $q->orderBy('vouchers.id', 'DESC')->paginate($perPage)
         );
     }
 }

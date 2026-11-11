@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Services\EmailService;
+use App\Services\StorePaymentNotifier;
 use App\Services\WhatsappNotification\GoeroneNotificationService;
 
 class LoyaltyController extends Controller
@@ -880,74 +881,20 @@ class LoyaltyController extends Controller
                             // For Notification to customer and store 
                             
                             // if ((int) ($request->mep ?? 0) !== 1) {
-                            //     $notificationData = [
-                            //         'customer_name'       => $customer->name ?? 'Customer',
-                            //         'store_name'          => $store->name ?? '',
-                            //         'payment_amount'      => 'INR ' . number_format($payment->amount, 2),
-                            //         'payment_ref'         => $payment->reference,
-                            //         'payment_confirmed_at'=> optional($payment->paid_at)->format('d M Y, h:i A'),
-                            //         // 'app_url'             => config('app.url'),
-                            //         // 'dashboard_url'       => config('app.url'),
-                            //     ];
+                            //     $notifier = app(StorePaymentNotifier::class);
 
-                            //     $ipAddress = $request->ip();
+                            //     // both (default)
+                            //     $notifier->send($request->user(), $store->id, $request->order_amount, $request->ref, $request->ip());
 
-                            //     // Customer email
-                            //     if (!empty($customer->email)) {
-                            //         $html = view('emails.store_payment_customer', $notificationData)->render();
+                            //     // only store
+                            //     // $notifier->send(..., only: ['store']);
 
-                            //         app(EmailService::class)->sendEmail(
-                            //             $customer,
-                            //             $customer->email,
-                            //             'Payment Successful - GoerOne',
-                            //             $html,
-                            //             $ipAddress
-                            //         );
-                            //     }
+                            //     // only customer
+                            //     // $notifier->send(..., only: ['customer']);
 
-                            //     // Merchant email
-                            //     if (!empty($storeOwner->email)) {
-                            //         $merchantHtml = view('emails.store_payment_merchant', $notificationData)->render();
-
-                            //         app(EmailService::class)->sendEmail(
-                            //             $storeOwner,
-                            //             $storeOwner->email,
-                            //             'Payment Received - ' . $store->name,
-                            //             $merchantHtml,
-                            //             $ipAddress
-                            //         );
-                            //     }
-
-                            //     // Customer WhatsApp
-                            //     GoeroneNotificationService::notify(
-                            //         'goerone_store_payment_customer',
-                            //         $request->user(),
-                            //         $notificationData,
-                            //         reference: $payment->reference,
-                            //         only: ['customer']
-                            //     );
-
-                            //     // Merchant WhatsApp
-                            //     GoeroneNotificationService::notify(
-                            //         'goerone_store_payment_partner',
-                            //         $storeOwner,
-                            //         $notificationData,
-                            //         reference: $payment->reference,
-                            //         only: ['customer']
-                            //     );
-                            //     // Customer WhatsApp notification
-                            //     // Call your existing customer WhatsApp service here.
-
-                            //     // Customer email notification
-                            //     // Call your existing customer email service here.
-
-                            //     // Store WhatsApp notification
-                            //     // Call your existing store WhatsApp service here.
-
-                            //     // Store email notification
-                            //     // Call your existing store email service here.
+                            //     // customer + staff
+                            //     // $notifier->send(..., only: ['customer', 'staff']);
                             // }
-
                             return response()->json([
                                 'status' => [
                                     'success' => true,
