@@ -176,6 +176,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/legal/save', [LegalPolicyController::class, 'save']);
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
+Route::any('/verify-otp-store', [StoreAuthController::class, 'verifyOtpStore']);
 Route::post('/store/register', [StoreAuthController::class, 'register']);
 
 Route::get('/store-pay/resolve/{handle}', [StoreController::class, 'resolveByHandle'])->middleware('throttle:60,1');
