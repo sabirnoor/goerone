@@ -16,6 +16,7 @@ class LoyaltyProgram extends Model
         'services' => 'array',
         'invitation_required' => 'boolean',
         'membership_amount' => 'decimal:2',
+        'gst_type' => 'integer', // 0 = inclusive, 1 = exclusive
         'welcome_coin' => 'integer',
         'referral_coin' => 'integer',
         'max_referral_account' => 'integer', //single customer can refer and earn upto how much users

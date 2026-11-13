@@ -205,3 +205,8 @@ ALTER TABLE `vouchers`
 
   ALTER TABLE `vouchers`
   ADD COLUMN `comission_source` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = paid from voucher amount, 1 = paid from order amount' AFTER `comission_value`;
+
+  ALTER TABLE `loyalty_program`
+ADD COLUMN `gst_type` TINYINT NOT NULL DEFAULT 0
+COMMENT '0 = Inclusive of GST, 1 = Exclusive of GST (applicable only for paid memberships)'
+AFTER `membership_amount`;
