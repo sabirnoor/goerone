@@ -350,7 +350,7 @@ class GoeroneNotificationService
                 );
 
                 $this->debug('payload', ['to' => $phone, 'payload' => $payload]);
-
+               
                 $response = $whatsAppService->sendTicket($account, $payload, $this->user);
 
                 $this->debug('response', ['to' => $phone, 'response' => $response]);

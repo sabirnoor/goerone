@@ -27,8 +27,8 @@ class StorePaymentPartnerMapper extends BaseWhatsappMapper
     public static function map(array $data, string $recipientType = 'customer'): array
     {
         return static::body(
-            static::param($data['store_name'] ?? null),
             static::param($data['amount'] ?? null, '0'),
+            static::param($data['store_name'] ?? null),
             static::param($data['ref'] ?? null),
         );
     }

@@ -8,6 +8,7 @@ use App\Services\BillingService;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\SendPasswordMail;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class EmailService
 {
@@ -26,7 +27,7 @@ class EmailService
             'body' => $body,
             'ip_address' => $ipAddress,
         ]);
-
+        
         $user->emailRequests()->save($emailRequest);
 
         try {

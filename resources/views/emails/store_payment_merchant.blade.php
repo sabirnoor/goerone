@@ -74,7 +74,7 @@
                                                     Confirmed on</td>
                                                 <td align="right"
                                                     style="font-size: 14px; font-weight: bold; color: #111111; padding: 6px 0 4px;">
-                                                    {{ $payment_confirmed_at ?? '' }}</td>
+                                                    {{ $payment_at ?? '' }}</td>
                                             </tr>
                                             <tr>
                                                 <td colspan="2" style="border-top: 1px solid #dbe4ff; height: 1px; line-height: 1px; font-size: 1px;">&nbsp;</td>

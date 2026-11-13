@@ -38,8 +38,11 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Services\EmailService;
-use App\Services\StorePaymentNotifier;
-use App\Services\WhatsappNotification\GoeroneNotificationService;
+use App\Services\Notifications\GoerOneNotifier;
+use Illuminate\Support\Facades\Log;
+
+// use App\Services\StorePaymentNotifier;
+// use App\Services\WhatsappNotification\GoeroneNotificationService;
 
 class LoyaltyController extends Controller
 {
@@ -876,25 +879,21 @@ class LoyaltyController extends Controller
                                 ];
                                 $this->rewardService->addPointsTemp($RewardInsert);
                             }
+
                             $this->StorePaymentcallback($request);
 
                             // For Notification to customer and store 
-                            
-                            // if ((int) ($request->mep ?? 0) !== 1) {
-                            //     $notifier = app(StorePaymentNotifier::class);
-
-                            //     // both (default)
-                            //     $notifier->send($request->user(), $store->id, $request->order_amount, $request->ref, $request->ip());
-
-                            //     // only store
-                            //     // $notifier->send(..., only: ['store']);
-
-                            //     // only customer
-                            //     // $notifier->send(..., only: ['customer']);
-
-                            //     // customer + staff
-                            //     // $notifier->send(..., only: ['customer', 'staff']);
+                            // if ((int) ($request->mep ?? 0) !== 1) {   
+                            //     GoerOneNotifier::send('store_payment', [
+                            //         'customer_id' => $request->user()->id,
+                            //         'store_id'    => $store->id,
+                            //         'amount'      => $request->order_amount,
+                            //         'ref'         => $request->ref,
+                            //         'ip'          => $request->ip(),
+                            //         'payment_at'  => Carbon::now()->format('d M Y, h:i A'),
+                            //     ]);
                             // }
+
                             return response()->json([
                                 'status' => [
                                     'success' => true,

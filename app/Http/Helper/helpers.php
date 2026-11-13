@@ -168,7 +168,7 @@ function meta_app_secret()
 {
     $AgencyID = (auth()->user()->UserType == 1) ? auth()->user()->id : auth()->user()->AgencyID;
     $AgencyDetails = Users::getAgencyDetail($AgencyID);
-    return $AgencyDetails->META_APP_SECRET ?? config('services.meta.app_secret');
+    return $AgencyDetails->META_APP_SECRET ?? env('META_APP_SECRET');
 }
 
 function cleanImageName($originalName)

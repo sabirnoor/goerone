@@ -382,11 +382,12 @@ class WhatsAppMessageService
     private function generateAppsecretProof(string $accessToken, $user = null): string
     {
         try {
+            $agencyId = ($user?->UserType == 1) ? $user->id : $user?->AgencyID;
 
             if (!empty($user?->details?->META_APP_SECRET)) {
                 $appSecret = $user->details->META_APP_SECRET;
             } else {
-                $appSecret = meta_app_secret();
+                $appSecret = ($agencyId ? Users::getAgencyDetail($agencyId)->META_APP_SECRET ?? null : null)?? meta_app_secret();
             }
 
             if (empty($appSecret)) {
@@ -407,6 +408,7 @@ class WhatsAppMessageService
             throw $e;
         }
     }
+
     public static function generateAppsecretProofStatic(string $accessToken): string
     {
         $appSecret = meta_app_secret();
