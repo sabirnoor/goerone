@@ -883,16 +883,16 @@ class LoyaltyController extends Controller
                             $this->StorePaymentcallback($request);
 
                             // For Notification to customer and store 
-                            if ((int) ($request->mep ?? 0) !== 1) {   
-                                GoerOneNotifier::send('store_payment', [
-                                    'customer_id' => $request->user()->id,
-                                    'store_id'    => $store->id,
-                                    'amount'      => $request->order_amount,
-                                    'ref'         => $request->ref,
-                                    'ip'          => $request->ip(),
-                                    'payment_at'  => Carbon::now()->format('d M Y, h:i A'),
-                                ]);
-                            }
+                            // if ((int) ($request->mep ?? 0) !== 1) {   
+                            //     GoerOneNotifier::send('store_payment', [
+                            //         'customer_id' => $request->user()->id,
+                            //         'store_id'    => $store->id,
+                            //         'amount'      => $request->order_amount,
+                            //         'ref'         => $request->ref,
+                            //         'ip'          => $request->ip(),
+                            //         'payment_at'  => Carbon::now()->format('d M Y, h:i A'),
+                            //     ]);
+                            // }
 
                             return response()->json([
                                 'status' => [
