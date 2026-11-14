@@ -95,6 +95,10 @@ class StoreController extends Controller
                 $keyword = (isset($request->keyword) && !empty($request->keyword)) ? $request->keyword : '';
                 $perPage = (isset($request->per_page) && $request->per_page > 0) ? $request->per_page : 25;
                 $user = $request->user();
+                // Admin tabs: draft (incomplete) / pending / approved / rejected. Empty or 'all' = no filter.
+                $statusFilter = in_array($request->registration_status, [
+                    Store::STATUS_DRAFT, Store::STATUS_PENDING, Store::STATUS_APPROVED, Store::STATUS_REJECTED,
+                ], true) ? $request->registration_status : null;
                 $result = Store::select('stores.*', 'stores.lat as latitude', 'stores.lon as longitude', 'mst_country.name as name', 'static_cities.fullRegionName')
                     ->with(['images', 'relationshipManager:id,name,mobile,countrycode'])
                     ->leftjoin('static_cities', 'stores.city', '=', 'static_cities.id')
@@ -116,7 +120,25 @@ class StoreController extends Controller
                             $query->orWhere('stores.phone', "like", "%" . $keyword . "%");
                             $query->orWhere('stores.contact_name', "like", "%" . $keyword . "%");
                         }
+                    })->when($statusFilter, function ($query) use ($statusFilter) {
+                        $query->where('stores.registration_status', $statusFilter);
                     })->orderBy('created_at', 'desc')->paginate($perPage);
+
+                // Tab badges (admin only). Not affected by the keyword / tab filter.
+                $statusCounts = null;
+                if ($user && $user->UserType == 1) {
+                    $statusCounts = Store::where('AgencyID', $user->id)
+                        ->select('registration_status', DB::raw('COUNT(*) as total'))
+                        ->groupBy('registration_status')
+                        ->pluck('total', 'registration_status');
+                    $statusCounts = [
+                        'all' => (int) $statusCounts->sum(),
+                        'draft' => (int) ($statusCounts[Store::STATUS_DRAFT] ?? 0),
+                        'pending' => (int) ($statusCounts[Store::STATUS_PENDING] ?? 0),
+                        'approved' => (int) ($statusCounts[Store::STATUS_APPROVED] ?? 0),
+                        'rejected' => (int) ($statusCounts[Store::STATUS_REJECTED] ?? 0),
+                    ];
+                }
 
                 if ($user && $result) {
                     return response()->json([
@@ -126,6 +148,7 @@ class StoreController extends Controller
                         ],
                         'message' => 'Success',
                         'data' => $result,
+                        'status_counts' => $statusCounts,
                         'UserType' => UserType(),
                     ]);
                 } else {
@@ -204,7 +227,13 @@ class StoreController extends Controller
                     // platform fee (percentage) – admin only, see below
                     'platform_fee' => 'nullable|numeric|min:0|max:100',
                     'platform_fee_payer' => ['nullable', Rule::in(['store', 'customer'])],
+                    // GSTIN, optional. e.g. 22AAAAA0000A1Z5
+                    'gst_number' => ['nullable', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/'],
                 ];
+
+                if ($request->filled('gst_number')) {
+                    $request->merge(['gst_number' => strtoupper(trim($request->gst_number))]);
+                }
 
                 // Bank details — optional and written by the store only (admin just views them).
                 // The form always sends bank_account_number for a store save, so its presence is the signal.
@@ -385,6 +414,12 @@ class StoreController extends Controller
                     // 'password'     => !empty($request->password) ? Hash::make($request->password) : Hash::make(Str::random(10)),
                     'updated_at'   => now(),
                 ];
+
+                // GST number: written only when the form sends the key (empty value clears it),
+                // so a client that does not know about it never wipes the stored value.
+                if ($request->has('gst_number')) {
+                    $storeData['gst_number'] = $request->filled('gst_number') ? $request->gst_number : null;
+                }
 
                 // Platform fee: only admin (agency, UserType == 1) can set or change it.
                 // For store users the keys are left out, so update() keeps the stored values
@@ -648,6 +683,7 @@ class StoreController extends Controller
             ->whereNotNull('stores.lat')
             ->whereNotNull('stores.lon')
             ->where('stores.is_active', 1) // inactive stores are never shown in search
+            ->where('stores.registration_status', Store::STATUS_APPROVED) // draft / pending / rejected never shown
             ->where('stores.AgencyID', $AgencyID)
             ->whereBetween('stores.lat', [$minLat, $maxLat])
             ->whereBetween('stores.lon', [$minLon, $maxLon]);
@@ -983,7 +1019,7 @@ class StoreController extends Controller
         if (!$store) {
             return $this->jsonError('Store not found', 404);
         }
-        if (!$store->is_active || !$store->payment_enabled) {
+        if (!$store->isApproved() || !$store->is_active || !$store->payment_enabled) {
             return $this->jsonError('This store is not accepting payments right now', 403);
         }
 
@@ -1014,6 +1050,12 @@ class StoreController extends Controller
             $store = Store::where('id', $request->id)->where('AgencyID', $user->id)->first();
             if (!$store) {
                 return $this->jsonError('Store not found.', 404);
+            }
+
+            // A store that is not approved yet is activated only by approving it
+            // (StoreRegistrationController::approve), never by this toggle.
+            if (!$store->isApproved()) {
+                return $this->jsonError('Approve this store first. Pending, rejected and incomplete stores cannot be activated here.', 409);
             }
 
             $newStatus = $store->is_active ? 0 : 1;

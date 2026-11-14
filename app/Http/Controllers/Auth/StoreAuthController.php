@@ -11,6 +11,9 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use App\Services\OtpService;
 use App\Services\EmailService;
 use App\Services\TwilioService;
@@ -31,6 +34,11 @@ class StoreAuthController extends Controller
         $this->twilio = $twilio;
     }
 
+    /**
+     * @deprecated Email/password self-signup. Stores now register via OTP:
+     * verifyOtpStore -> startRegistration -> StoreOnboardingController.
+     * Remove the route for this method, or keep it for admin tooling only.
+     */
     public function register(Request $request)
     {
         // $validated = $request->validate([
@@ -262,8 +270,9 @@ class StoreAuthController extends Controller
                 ], 409);
             }
 
-            // Inactive store cannot login
-            if ($store && !$store->is_active) {
+            // Only an approved store that admin switched off is blocked.
+            // draft / pending / rejected stores must still log in to continue or view onboarding.
+            if ($store && $store->isApproved() && !$store->is_active) {
                 return response()->json([
                     'status' => [
                         'success' => false,
@@ -281,7 +290,7 @@ class StoreAuthController extends Controller
                 'logo' => GetLogo($user),
             ];
             // Email OTP
-            $to_email = $store->email;
+            $to_email = $store?->email; // null for a phone that is not registered yet
 
             $message = "Dear User, your OTP for CRM access is " . $OTPS . ". DO NOT SHARE the OTP. If you did not request an OTP contact us on our support number. Team CRMOZC";
 
@@ -298,16 +307,18 @@ class StoreAuthController extends Controller
             // Send OTP
             $this->twilio->sendSms($request->phone, $message);
 
-            $subject = 'OTP for Store Account Verification';
-            $body = view('emails.otp_send', $data)->render();
-            // Send Email
-            $emailRequest = $this->emailService->sendEmail(
-                $user,
-                $to_email,
-                $subject,
-                $body,
-                $ipAddress
-            );
+            // Send Email (only when the store exists and has an email on file)
+            if (!empty($to_email)) {
+                $subject = 'OTP for Store Account Verification';
+                $body = view('emails.otp_send', $data)->render();
+                $this->emailService->sendEmail(
+                    $user,
+                    $to_email,
+                    $subject,
+                    $body,
+                    $ipAddress
+                );
+            }
 
             return response()->json([
                 'status' => [
@@ -487,8 +498,15 @@ class StoreAuthController extends Controller
             ->where('phone', $request->phone)
             ->first();
 
-        // phone verified, but store does not exist
+        // phone verified, but store does not exist -> hand back a short-lived registration token.
+        // startRegistration() needs it, so nobody can register a phone they have not verified.
         if (!$store) {
+            $registrationToken = Str::random(48);
+            Cache::put('store_reg:' . $registrationToken, [
+                'phone' => $request->phone,
+                'agency_id' => $AgencyID,
+            ], now()->addMinutes(30));
+
             return response()->json([
                 'status' => [
                     'success' => true,
@@ -498,23 +516,131 @@ class StoreAuthController extends Controller
                 'loggedin' => false,
                 'store_exists' => false,
                 'can_register' => true,
+                'registration_token' => $registrationToken,
                 'message' => 'phone number verified successfully. Please register your store.',
             ]);
         }
 
-        if (!$store->is_active) {
+        // Only an approved store that admin switched off is blocked.
+        if ($store->isApproved() && !$store->is_active) {
             return response()->json([
                 'status' => false,
                 'message' => 'This store is inactive. Please contact support.',
             ], 403);
         }
 
+        if (!$store->phone_verified_at) {
+            Store::where('id', $store->id)->update(['phone_verified_at' => now()]);
+            $store->phone_verified_at = now();
+        }
+
+        return $this->storeLoginResponse($store, 'OTP verified successfully. Logged In Successfully');
+    }
+
+    /**
+     * Step after "Yes, I want to register": creates the DRAFT store for a verified phone.
+     * Same API-key bearer auth as login / verifyOtpStore (NOT a sanctum route).
+     * Route: Route::post('/store/auth/start-registration', [StoreAuthController::class, 'startRegistration']);
+     */
+    public function startRegistration(Request $request)
+    {
+        $request->validate([
+            'registration_token' => 'required|string|size:48',
+        ]);
+
+        $token = trim((string) $request->bearerToken());
+        $user = $token ? User::where('api_token', hash('sha256', $token))->first() : null;
+        if (!$user) {
+            return response()->json(['status' => false, 'message' => 'Unauthenticated'], 401);
+        }
+        $AgencyID = ($user->UserType == 1) ? $user->id : $user->AgencyID;
+
+        $payload = Cache::get('store_reg:' . $request->registration_token);
+        if (!$payload || (int) $payload['agency_id'] !== (int) $AgencyID) {
+            return response()->json([
+                'status' => [
+                    'success' => false,
+                    'httpStatus' => 410,
+                ],
+                'message' => 'Verification expired. Please verify your mobile number again.',
+            ], 410);
+        }
+
+        $phone = $payload['phone'];
+
+        // Idempotent: a double tap, or a race, returns the same store instead of a duplicate.
+        $store = Store::where('AgencyID', $AgencyID)->where('phone', $phone)->first();
+
+        if (!$store) {
+            // Mirrors the defaults createStore() writes so NOT NULL columns are satisfied.
+            $id = Store::insertGetId([
+                'AgencyID' => $AgencyID,
+                'UserSysId' => $AgencyID,
+                'store_name' => '',
+                'phone' => $phone,
+                'email' => null,
+                'password' => null,
+                'settlement_day' => 7,
+                'noOfPass' => 0,
+                'gatenumber' => '',
+                'event_time' => '',
+                'entry_time' => '',
+                'rewardrequired' => 0,
+                'swipelimit' => 0,
+                'swipeinyear' => 0,
+                'monthlyswipe' => 0,
+                'OTPAllowed' => 0,
+                'vendortype' => 0,
+                'vendor_category' => '',
+                'FaceRecognition' => 0,
+                'event_date' => now(),
+                'lat' => '',
+                'lon' => '',
+                'placeId' => '',
+                // nothing is switched on until admin approves
+                'enquiry_enabled' => 0,
+                'payment_enabled' => 0,
+                'is_active' => 0,
+                'registration_status' => Store::STATUS_DRAFT,
+                'registration_source' => 'self',
+                'onboarding_step' => 0,
+                'phone_verified_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $store = Store::find($id);
+
+            DB::table('store_status_logs')->insert([
+                'store_id' => $store->id,
+                'from_status' => null,
+                'to_status' => Store::STATUS_DRAFT,
+                'changed_by' => null,
+                'reason' => 'Self registration started',
+                'created_at' => now(),
+            ]);
+        }
+
+        Cache::forget('store_reg:' . $request->registration_token);
+
+        return $this->storeLoginResponse($store, 'Registration started');
+    }
+
+    /**
+     * Shared login response. Only an APPROVED store gets a full token; everyone else gets
+     * an 'onboarding' ability token (and EnsureStoreApproved keeps it off the panel routes).
+     */
+    private function storeLoginResponse(Store $store, string $message)
+    {
         $store->store_relation_manager = $store->relation_manager
             ? User::select('id', 'name', 'mobile', 'email', 'countrycode')
                 ->find($store->relation_manager)
             : null;
 
-        $accessToken = $store->createToken('store-token')->plainTextToken;
+        $accessToken = $store->createToken(
+            'store-token',
+            $store->isApproved() ? ['*'] : ['onboarding']
+        )->plainTextToken;
 
         return response()->json([
             'status' => [
@@ -527,7 +653,13 @@ class StoreAuthController extends Controller
             'verified' => true,
             'loggedin' => true,
             'store_exists' => true,
-            'message' => 'OTP verified successfully. Logged In Successfully',
+            // the frontend routes on these
+            'registration_status' => $store->registration_status,
+            'onboarding_step' => (int) $store->onboarding_step,
+            'rejection_reason' => $store->registration_status === Store::STATUS_REJECTED
+                ? $store->rejection_reason
+                : null,
+            'message' => $message,
         ]);
     }
 

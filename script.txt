@@ -210,3 +210,33 @@ ALTER TABLE `vouchers`
 ADD COLUMN `gst_type` TINYINT NOT NULL DEFAULT 0
 COMMENT '0 = Inclusive of GST, 1 = Exclusive of GST (applicable only for paid memberships)'
 AFTER `membership_amount`;
+
+ALTER TABLE `stores`
+    ADD COLUMN `registration_status` VARCHAR(20) NOT NULL DEFAULT 'approved' AFTER `is_active`,
+    ADD INDEX `stores_registration_status_index` (`registration_status`),
+    ADD COLUMN `registration_source` VARCHAR(10) NOT NULL DEFAULT 'admin' AFTER `registration_status`,
+    ADD COLUMN `onboarding_step` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `registration_source`,
+    ADD COLUMN `phone_verified_at` TIMESTAMP NULL AFTER `onboarding_step`,
+    ADD COLUMN `gst_number` VARCHAR(20) NULL AFTER `phone_verified_at`,
+    ADD COLUMN `submitted_at` TIMESTAMP NULL,
+    ADD COLUMN `approved_at` TIMESTAMP NULL,
+    ADD COLUMN `approved_by` BIGINT UNSIGNED NULL,
+    ADD COLUMN `rejected_at` TIMESTAMP NULL,
+    ADD COLUMN `rejected_by` BIGINT UNSIGNED NULL,
+    ADD COLUMN `rejection_reason` TEXT NULL,
+    MODIFY COLUMN `email` VARCHAR(255) NULL,
+    MODIFY COLUMN `password` VARCHAR(255) NULL,
+    ADD UNIQUE KEY `stores_agency_phone_unique` (`AgencyID`, `phone`);
+
+    CREATE TABLE `store_status_logs` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `store_id` BIGINT UNSIGNED NOT NULL,
+    `from_status` VARCHAR(20) NULL,
+    `to_status` VARCHAR(20) NOT NULL,
+    `changed_by` BIGINT UNSIGNED NULL,
+    `reason` TEXT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (`id`),
+    KEY `store_status_logs_store_id_index` (`store_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

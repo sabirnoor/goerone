@@ -7,6 +7,8 @@ use App\Http\Controllers\API\LoyaltyController;
 use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
+use App\Http\Controllers\API\StoreOnboardingController;
+use App\Http\Controllers\API\StoreRegistrationController;
 use App\Http\Controllers\VoucherCartController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
@@ -21,6 +23,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\VoucherCheckoutController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WalletController;
+use App\Http\Middleware\EnsureStoreApproved;
 use App\Models\Service;
 use App\Models\StorePayment;
 use Illuminate\Http\Request;
@@ -35,7 +38,9 @@ Route::get('/usertype', function (Request $request) {
 Route::prefix("webhook")->group(function () {
     Route::match(['get', 'post'], '/secureservereasebuzz', [WebhookController::class, 'secureservereasebuzz']);
 });
-Route::middleware(['auth:sanctum'])->group(function () {
+// EnsureStoreApproved: a Store token that is draft / pending / rejected gets a 403 on everything in this group.
+// Admin / staff / customer tokens (User model) pass straight through.
+Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
 
     Route::prefix("customer")->group(function () {
@@ -177,7 +182,25 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::any('/verify-otp-store', [StoreAuthController::class, 'verifyOtpStore']);
-Route::post('/store/register', [StoreAuthController::class, 'register']);
+Route::post('/store/start-registration', [StoreAuthController::class, 'startRegistration'])->middleware('throttle:10,1');
+// DISABLED: the old email/password signup is public and would now create an *approved* store with no review
+// (registration_status defaults to 'approved'). Self-registration goes through OTP -> /store/start-registration.
+// Route::post('/store/register', [StoreAuthController::class, 'register']);
+
+// Store onboarding (draft -> pending). Store token, deliberately NOT behind EnsureStoreApproved.
+Route::middleware('auth:sanctum')->prefix('store/onboarding')->group(function () {
+    Route::get('/', [StoreOnboardingController::class, 'show']);
+    Route::post('/step/{step}', [StoreOnboardingController::class, 'saveStep'])->whereNumber('step');
+    Route::post('/remove-image/{imageId}', [StoreOnboardingController::class, 'removeImage']);
+    Route::post('/submit', [StoreOnboardingController::class, 'submit']);
+});
+
+// Admin review of store registrations (UserType 1 is enforced inside the controller)
+Route::middleware('auth:sanctum')->prefix('store/registration')->group(function () {
+    Route::post('/approve', [StoreRegistrationController::class, 'approve']);
+    Route::post('/reject', [StoreRegistrationController::class, 'reject']);
+    Route::post('/history', [StoreRegistrationController::class, 'history']);
+});
 
 Route::get('/store-pay/resolve/{handle}', [StoreController::class, 'resolveByHandle'])->middleware('throttle:60,1');
 
