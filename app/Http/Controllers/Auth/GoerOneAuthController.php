@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Services\OtpService;
 use App\Services\EmailService;
 use App\Services\TwilioService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
 
@@ -584,5 +585,54 @@ class GoerOneAuthController extends Controller
                 'message' => $th->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Delete my account = mark it inactive and sign out everywhere.
+     * Works for whoever is logged in: a customer/staff User (users.active = 0)
+     * or a Store (stores.is_active = 0). Nothing is hard-deleted.
+     *
+     * Route (inside auth:sanctum, NOT behind EnsureStoreApproved so a draft/pending store can leave too):
+     *   Route::post('/users/deactivate', [GoerOneAuthController::class, 'deactivate']);
+     */
+    public function deactivate(Request $request)
+    {
+        try {
+            $account = $request->user();
+
+            if (!$account) {
+                return $this->deactivateResponse(false, 401, 'Unauthenticated');
+            }
+
+            if ($account instanceof User) {
+                // The agency admin owns every store and customer; it cannot be removed from here.
+                if ((int) $account->UserType === 1) {
+                    return $this->deactivateResponse(false, 403, 'This account cannot be deleted.');
+                }
+                $account->active = 0;
+                $account->save();
+            } elseif ($account instanceof Store) {
+                // Same flag the admin toggle uses; login already blocks an approved-but-inactive store.
+                Store::where('id', $account->id)->update(['is_active' => 0, 'updated_at' => now()]);
+            } else {
+                return $this->deactivateResponse(false, 403, 'This account cannot be deleted.');
+            }
+
+            // Sign out on every device
+            $account->tokens()->delete();
+
+            return $this->deactivateResponse(true, 200, 'Account deleted successfully');
+        } catch (\Throwable $th) {
+            Log::error('Account deactivate failed', ['error' => $th->getMessage()]);
+            return $this->deactivateResponse(false, 500, 'Unable to delete your account. Please try again.');
+        }
+    }
+
+    private function deactivateResponse(bool $success, int $http, string $message)
+    {
+        return response()->json([
+            'status' => ['success' => $success, 'httpStatus' => $http],
+            'message' => $message,
+        ], $success ? 200 : $http);
     }
 }

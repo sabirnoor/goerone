@@ -224,6 +224,7 @@ Route::middleware('apiKey')->group(function () {
         Route::post('login', [GoerOneAuthController::class, 'login']);
         Route::post('register', [GoerOneAuthController::class, 'register']);
         Route::post('otp-verify', [GoerOneAuthController::class, 'otpverify']);
+        Route::post('/users/deactivate', [GoerOneAuthController::class, 'deactivate']);
     });
     Route::post('/loyalty/program', [LoyaltyController::class, 'getLoyaltyProgram']);
     Route::post('/loyalty/city-service', [LoyaltyController::class, 'cityService']);
