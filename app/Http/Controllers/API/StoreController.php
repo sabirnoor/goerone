@@ -18,6 +18,8 @@ use App\Http\Controllers\API\AuthController;
 use App\Helpers\Helper;
 use App\Models\StorePayment;
 use App\Models\User;
+use App\Models\VendorCategory;
+use App\Services\VendorMasterService;
 
 class StoreController extends Controller
 {
@@ -28,16 +30,16 @@ class StoreController extends Controller
     public $API_URL;
     protected $otpService;
 
-    const VENDOR_CATEGORIES = [
-        'Dining',
-        'Hotels',
-        'Shopping',
-        'Health',
-        'Beauty',
-        'Fitness',
-        'Travel',
-        'Entertainment',
-    ];
+    // const VENDOR_CATEGORIES = [
+    //     'Dining',
+    //     'Hotels',
+    //     'Shopping',
+    //     'Health',
+    //     'Beauty',
+    //     'Fitness',
+    //     'Travel',
+    //     'Entertainment',
+    // ];
 
     public function __construct()
     {
@@ -180,7 +182,8 @@ class StoreController extends Controller
     public function fetchStoreCategories(Request $request)
     {
         try {
-            $categories = collect(self::VENDOR_CATEGORIES)->values();
+            // $categories = collect(self::VENDOR_CATEGORIES)->values();
+            $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
 
             return response()->json([
                 'status' => [
@@ -209,6 +212,8 @@ class StoreController extends Controller
                 $sharedRules = [
                     'store_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                     'vendor_category' => 'nullable|string|max:255',
+                    'vendor_category_id' => 'nullable|integer|exists:vendor_categories,id',
+                    'vendor_type_id' => 'nullable|integer|exists:vendor_types,id',
                     // (d) up to 5 gallery images, sent as store_images[] in the multipart form
                     'store_images' => 'nullable|array|max:5',
                     'store_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:4096',
@@ -414,6 +419,17 @@ class StoreController extends Controller
                     // 'password'     => !empty($request->password) ? Hash::make($request->password) : Hash::make(Str::random(10)),
                     'updated_at'   => now(),
                 ];
+
+                // Vendor master: validate category/type, then write ids + names (names stay in the old text columns)
+                $current = !empty($storeId) ? Store::find($storeId) : null;
+                $vm = VendorMasterService::resolve($request->vendor_category_id, $request->vendor_type_id, $current);
+                if ($vm['error']) {
+                    return response()->json([
+                        'status' => ['success' => false, 'httpStatus' => 201],
+                        'message' => $vm['error'],
+                    ]);
+                }
+                $storeData = array_merge($storeData, $vm['fields']);
 
                 // GST number: written only when the form sends the key (empty value clears it),
                 // so a client that does not know about it never wipes the stored value.
@@ -741,7 +757,8 @@ class StoreController extends Controller
          * ---------------------------------------------------------
          */
 
-        $categories = collect(self::VENDOR_CATEGORIES)->values();
+        // $categories = collect(self::VENDOR_CATEGORIES)->values();
+        $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
 
         /*
         * ---------------------------------------------------------

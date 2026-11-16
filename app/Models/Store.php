@@ -19,6 +19,8 @@ class Store extends Authenticatable
         'phone',
         'store_timings',
         'product_types',
+        'vendor_category_id',
+        'vendor_type_id',
         'enquiry_enabled',
         'payment_enabled',
         'is_halal',
@@ -174,7 +176,7 @@ class Store extends Authenticatable
         return $this->hasMany(StoreSettlements::class);
     }
 
-     public function images()
+    public function images()
     {
         return $this->hasMany(StoreImage::class)->orderBy('sort_order');
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\StoreImage;
+use App\Services\VendorMasterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -195,7 +196,9 @@ class StoreOnboardingController extends Controller
                 return [
                     'store_name' => 'required|string|max:255',
                     'contact_name' => 'required|string|max:150',
-                    'vendor_category' => ['required', 'string', Rule::in(StoreController::VENDOR_CATEGORIES)],
+                    // 'vendor_category' => ['required', 'string', Rule::in(StoreController::VENDOR_CATEGORIES)],
+                    'vendor_category_id' => ['required', 'integer', 'exists:vendor_categories,id'],
+                    'vendor_type_id' => ['nullable', 'integer', 'exists:vendor_types,id'],
                     'product_types' => 'nullable|string',
                     'email' => ['nullable', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($store->id)],
                 ];
@@ -277,10 +280,12 @@ class StoreOnboardingController extends Controller
     {
         switch ($step) {
             case 1:
+                $vm = VendorMasterService::resolveOrFail($request->vendor_category_id, $request->vendor_type_id, $store);
                 return [
                     'store_name' => trim($request->store_name),
                     'contact_name' => trim($request->contact_name),
-                    'vendor_category' => $request->vendor_category,
+                    // 'vendor_category' => $request->vendor_category,
+                    ...$vm,
                     'product_types' => $request->filled('product_types') ? $request->product_types : null,
                     'email' => $request->filled('email') ? strtolower(trim($request->email)) : null,
                 ];

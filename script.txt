@@ -240,3 +240,231 @@ ALTER TABLE `stores`
     PRIMARY KEY (`id`),
     KEY `store_status_logs_store_id_index` (`store_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create vendor_categories table
+CREATE TABLE `vendor_categories` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(120) NOT NULL,
+    `is_food` TINYINT(1) NOT NULL DEFAULT 0,
+    `sort_order` INT UNSIGNED NOT NULL DEFAULT 0,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `vendor_categories_name_unique` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Create vendor_types table
+CREATE TABLE `vendor_types` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `vendor_category_id` BIGINT UNSIGNED NOT NULL,
+    `name` VARCHAR(120) NOT NULL,
+    `sort_order` INT UNSIGNED NOT NULL DEFAULT 0,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `vendor_types_category_name_unique` (`vendor_category_id`, `name`),
+    CONSTRAINT `vendor_types_vendor_category_id_foreign`
+        FOREIGN KEY (`vendor_category_id`)
+        REFERENCES `vendor_categories` (`id`)
+        ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Add vendor category and type columns to stores
+ALTER TABLE `stores`
+    ADD COLUMN `vendor_category_id` BIGINT UNSIGNED NULL AFTER `vendor_category`,
+    ADD INDEX `stores_vendor_category_id_index` (`vendor_category_id`),
+    ADD COLUMN `vendor_type_id` BIGINT UNSIGNED NULL AFTER `vendor_category_id`,
+    ADD INDEX `stores_vendor_type_id_index` (`vendor_type_id`);
+
+
+    INSERT INTO vendor_categories (name, is_food, sort_order, is_active, created_at, updated_at)
+VALUES
+('Home & Living', 0, 1, 1, NOW(), NOW()),
+('Laundry & Cleaning Services', 0, 2, 1, NOW(), NOW()),
+('Food & Beverages', 1, 3, 1, NOW(), NOW()),
+('Transportation & Logistics', 0, 4, 1, NOW(), NOW()),
+('Grocery & Supermarket', 0, 5, 1, NOW(), NOW()),
+('Lifestyle', 0, 6, 1, NOW(), NOW()),
+('Travel & Tourism', 0, 7, 1, NOW(), NOW()),
+('Health & Wellness', 0, 8, 1, NOW(), NOW()),
+('Printing & Publishing', 0, 9, 1, NOW(), NOW()),
+('Wedding & Events', 0, 10, 1, NOW(), NOW()),
+('Hotels & Accommodation', 0, 11, 1, NOW(), NOW()),
+('Fuel & Energy', 0, 12, 1, NOW(), NOW()),
+('Entertainment & Recreation', 0, 13, 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+
+
+INSERT INTO vendor_types
+(vendor_category_id, name, sort_order, is_active, created_at, updated_at)
+SELECT vc.id, v.name, v.sort_order, 1, NOW(), NOW()
+FROM (
+    SELECT 'Home & Living' category, 'Furniture Store' name, 1 sort_order UNION ALL
+    SELECT 'Home & Living', 'Home Decor Store', 2 UNION ALL
+    SELECT 'Home & Living', 'Home Furnishing Store', 3 UNION ALL
+    SELECT 'Home & Living', 'Kitchenware Store', 4 UNION ALL
+    SELECT 'Home & Living', 'Home Appliances Store', 5 UNION ALL
+    SELECT 'Home & Living', 'Lighting & Electrical Store', 6 UNION ALL
+    SELECT 'Home & Living', 'Hardware Store', 7 UNION ALL
+    SELECT 'Home & Living', 'Paint & Wallpaper', 8 UNION ALL
+    SELECT 'Home & Living', 'Mattress & Bedding Store', 9 UNION ALL
+    SELECT 'Home & Living', 'Bathroom & Sanitaryware Store', 10 UNION ALL
+    SELECT 'Home & Living', 'Tiles & Flooring Store', 11 UNION ALL
+    SELECT 'Home & Living', 'Crockery & Tableware Store', 12 UNION ALL
+    SELECT 'Home & Living', 'Glassware Store', 13 UNION ALL
+    SELECT 'Home & Living', 'Plastic Household Products Store', 14 UNION ALL
+    SELECT 'Home & Living', 'Wooden & Handcrafted Products Store', 15 UNION ALL
+    SELECT 'Home & Living', 'Home Cleaning Products Store', 16 UNION ALL
+    SELECT 'Home & Living', 'Plants & Flower Shop', 17 UNION ALL
+    SELECT 'Home & Living', 'Doors & Windows Store', 18 UNION ALL
+    SELECT 'Home & Living', 'Air Conditioner & Cooling Store', 19 UNION ALL
+    SELECT 'Home & Living', 'Household Essentials Store', 20
+
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Laundry', 1
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Carpet Cleaning', 2
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Sofa & Upholstery Cleaning', 3
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Home Deep Cleaning', 4
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Car Interior Cleaning', 5
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Pest Control Services', 6
+    UNION ALL SELECT 'Laundry & Cleaning Services', 'Vehicle Washing Service', 7
+
+    UNION ALL SELECT 'Food & Beverages', 'Bakery Shop', 1
+    UNION ALL SELECT 'Food & Beverages', 'Cake Shop', 2
+    UNION ALL SELECT 'Food & Beverages', 'Pizza & Bakery', 3
+    UNION ALL SELECT 'Food & Beverages', 'Home Bakery', 4
+    UNION ALL SELECT 'Food & Beverages', 'Ice Cream & Dessert Shop', 5
+    UNION ALL SELECT 'Food & Beverages', 'Snacks & Savouries Shop', 6
+    UNION ALL SELECT 'Food & Beverages', 'Bakery & Cafe', 7
+    UNION ALL SELECT 'Food & Beverages', 'Restaurant', 8
+    UNION ALL SELECT 'Food & Beverages', 'Coffee Shop', 9
+    UNION ALL SELECT 'Food & Beverages', 'Fast Food', 10
+    UNION ALL SELECT 'Food & Beverages', 'Catering Services', 11
+
+    UNION ALL SELECT 'Transportation & Logistics', 'Cab Service', 1
+    UNION ALL SELECT 'Transportation & Logistics', 'Taxi Service', 2
+    UNION ALL SELECT 'Transportation & Logistics', 'Bike Taxi Service', 3
+    UNION ALL SELECT 'Transportation & Logistics', 'Car Rental Service', 4
+    UNION ALL SELECT 'Transportation & Logistics', 'Self-Drive Car Rental', 5
+    UNION ALL SELECT 'Transportation & Logistics', 'Airport Transfer Service', 6
+    UNION ALL SELECT 'Transportation & Logistics', 'Outstation Cab Service', 7
+    UNION ALL SELECT 'Transportation & Logistics', 'Local Taxi Service', 8
+    UNION ALL SELECT 'Transportation & Logistics', 'Luxury Car Rental', 9
+    UNION ALL SELECT 'Transportation & Logistics', 'Travel & Tour Transportation', 10
+    UNION ALL SELECT 'Transportation & Logistics', 'Auto Rickshaw Service', 11
+    UNION ALL SELECT 'Transportation & Logistics', 'Tempo Traveller Rental', 12
+    UNION ALL SELECT 'Transportation & Logistics', 'Goods Transport Service', 13
+    UNION ALL SELECT 'Transportation & Logistics', 'Courier Service', 14
+    UNION ALL SELECT 'Transportation & Logistics', 'Parcel Delivery Service', 15
+    UNION ALL SELECT 'Transportation & Logistics', 'Packers & Movers', 16
+    UNION ALL SELECT 'Transportation & Logistics', 'Freight & Cargo Service', 17
+    UNION ALL SELECT 'Transportation & Logistics', 'E-commerce Delivery', 18
+    UNION ALL SELECT 'Transportation & Logistics', 'Logistics Management', 19
+
+    UNION ALL SELECT 'Grocery & Supermarket', 'Supermarket', 1
+    UNION ALL SELECT 'Grocery & Supermarket', 'Hypermarket', 2
+    UNION ALL SELECT 'Grocery & Supermarket', 'Grocery Store', 3
+    UNION ALL SELECT 'Grocery & Supermarket', 'Mini Mart', 4
+    UNION ALL SELECT 'Grocery & Supermarket', 'Convenience Store', 5
+    UNION ALL SELECT 'Grocery & Supermarket', 'Departmental Store', 6
+    UNION ALL SELECT 'Grocery & Supermarket', 'General Store', 7
+    UNION ALL SELECT 'Grocery & Supermarket', 'Organic Grocery Store', 8
+    UNION ALL SELECT 'Grocery & Supermarket', 'Wholesale Grocery Store', 9
+    UNION ALL SELECT 'Grocery & Supermarket', 'Fruits & Vegetables Store', 10
+    UNION ALL SELECT 'Grocery & Supermarket', 'Meat & Poultry Store', 11
+    UNION ALL SELECT 'Grocery & Supermarket', 'Fish & Seafood Store', 12
+    UNION ALL SELECT 'Grocery & Supermarket', 'Frozen Food Store', 13
+    UNION ALL SELECT 'Grocery & Supermarket', 'Spices & Dry Fruits Store', 14
+    UNION ALL SELECT 'Grocery & Supermarket', 'Rice & Pulses Store', 15
+    UNION ALL SELECT 'Grocery & Supermarket', 'Imported Food Store', 16
+    UNION ALL SELECT 'Grocery & Supermarket', 'Household Essentials Store', 17
+    UNION ALL SELECT 'Grocery & Supermarket', 'Personal Care & Hygiene Store', 18
+    UNION ALL SELECT 'Grocery & Supermarket', 'Online Grocery Store', 19
+
+    UNION ALL SELECT 'Lifestyle', 'Gift Shop', 1
+    UNION ALL SELECT 'Lifestyle', 'Handicraft Store', 2
+    UNION ALL SELECT 'Lifestyle', 'Art & Craft Store', 3
+    UNION ALL SELECT 'Lifestyle', 'Fashion Accessories Store', 4
+    UNION ALL SELECT 'Lifestyle', 'Bags & Wallets Store', 5
+    UNION ALL SELECT 'Lifestyle', 'Watch Store', 6
+    UNION ALL SELECT 'Lifestyle', 'Sunglasses Store', 7
+    UNION ALL SELECT 'Lifestyle', 'Perfume & Fragrance Store', 8
+    UNION ALL SELECT 'Lifestyle', 'Jewellery & Accessories Store', 9
+    UNION ALL SELECT 'Lifestyle', 'Luxury Products Store', 10
+    UNION ALL SELECT 'Lifestyle', 'Souvenir Shop', 11
+    UNION ALL SELECT 'Lifestyle', 'Toy & Hobby Store', 12
+    UNION ALL SELECT 'Lifestyle', 'Musical Instruments Store', 13
+    UNION ALL SELECT 'Lifestyle', 'Party Supplies Store', 14
+    UNION ALL SELECT 'Lifestyle', 'Candle & Fragrance Store', 15
+    UNION ALL SELECT 'Lifestyle', 'Pet Accessories Store', 16
+    UNION ALL SELECT 'Lifestyle', 'Stationery & Creative Supplies', 17
+    UNION ALL SELECT 'Lifestyle', 'Outdoor & Camping Store', 18
+    UNION ALL SELECT 'Lifestyle', 'Sports & Lifestyle Accessories', 19
+    UNION ALL SELECT 'Lifestyle', 'Lifestyle Boutique', 20
+
+    UNION ALL SELECT 'Travel & Tourism', 'Travel Agency', 1
+    UNION ALL SELECT 'Travel & Tourism', 'Travel Packages', 2
+    UNION ALL SELECT 'Travel & Tourism', 'Holiday Packages', 3
+    UNION ALL SELECT 'Travel & Tourism', 'Tour & Sightseeing Packages', 4
+    UNION ALL SELECT 'Travel & Tourism', 'Adventure Tour Packages', 5
+    UNION ALL SELECT 'Travel & Tourism', 'Domestic Tour Packages', 6
+    UNION ALL SELECT 'Travel & Tourism', 'International Tour Packages', 7
+    UNION ALL SELECT 'Travel & Tourism', 'Travel Itinerary Services', 8
+    UNION ALL SELECT 'Travel & Tourism', 'Pilgrimage Tour Packages', 9
+    UNION ALL SELECT 'Travel & Tourism', 'Group Tour Packages', 10
+    UNION ALL SELECT 'Travel & Tourism', 'Travel Planning Services', 11
+
+    UNION ALL SELECT 'Health & Wellness', 'Medical Store', 1
+    UNION ALL SELECT 'Health & Wellness', 'Hospital', 2
+    UNION ALL SELECT 'Health & Wellness', 'Clinic', 3
+    UNION ALL SELECT 'Health & Wellness', 'Diagnostic Centre', 4
+    UNION ALL SELECT 'Health & Wellness', 'Dental Clinic', 5
+    UNION ALL SELECT 'Health & Wellness', 'Eye Clinic / Optical Store', 6
+    UNION ALL SELECT 'Health & Wellness', 'Physiotherapy Centre', 7
+    UNION ALL SELECT 'Health & Wellness', 'Wellness Centre', 8
+    UNION ALL SELECT 'Health & Wellness', 'Nutrition & Diet Centre', 9
+    UNION ALL SELECT 'Health & Wellness', 'Healthcare Equipment Store', 10
+    UNION ALL SELECT 'Health & Wellness', 'Medical Supplies Store', 11
+    UNION ALL SELECT 'Health & Wellness', 'Ayurvedic Store', 12
+    UNION ALL SELECT 'Health & Wellness', 'Home Healthcare Services', 13
+    UNION ALL SELECT 'Health & Wellness', 'Nursing Care Services', 14
+    UNION ALL SELECT 'Health & Wellness', 'Skin & Dermatology Clinic', 15
+    UNION ALL SELECT 'Health & Wellness', 'Veterinary Clinic', 16
+
+    UNION ALL SELECT 'Printing & Publishing', 'Printing Press', 1
+    UNION ALL SELECT 'Printing & Publishing', 'Digital Printing', 2
+    UNION ALL SELECT 'Printing & Publishing', 'Flex & Banner Printing', 3
+    UNION ALL SELECT 'Printing & Publishing', 'Packaging & Label Printing', 4
+    UNION ALL SELECT 'Printing & Publishing', 'Signage & Branding', 5
+
+    UNION ALL SELECT 'Wedding & Events', 'Wedding Planner', 1
+    UNION ALL SELECT 'Wedding & Events', 'Event Management', 2
+    UNION ALL SELECT 'Wedding & Events', 'Wedding Decorator', 3
+    UNION ALL SELECT 'Wedding & Events', 'Event Venue', 4
+    UNION ALL SELECT 'Wedding & Events', 'Banquet Hall', 5
+    UNION ALL SELECT 'Wedding & Events', 'Catering & Event Services', 6
+    UNION ALL SELECT 'Wedding & Events', 'Party Planner', 7
+    UNION ALL SELECT 'Wedding & Events', 'Wedding Photography', 8
+
+    UNION ALL SELECT 'Hotels & Accommodation', 'Hotels', 1
+    UNION ALL SELECT 'Hotels & Accommodation', 'Resorts', 2
+    UNION ALL SELECT 'Hotels & Accommodation', 'Homestays', 3
+    UNION ALL SELECT 'Hotels & Accommodation', 'Guest Houses', 4
+
+    UNION ALL SELECT 'Fuel & Energy', 'Petrol Pumps', 1
+    UNION ALL SELECT 'Fuel & Energy', 'LPG Services', 2
+
+    UNION ALL SELECT 'Entertainment & Recreation', 'Movie Theatre', 1
+    UNION ALL SELECT 'Entertainment & Recreation', 'Gaming Zone', 2
+    UNION ALL SELECT 'Entertainment & Recreation', 'Water Park', 3
+    UNION ALL SELECT 'Entertainment & Recreation', 'Indoor Play Arena', 4
+    UNION ALL SELECT 'Entertainment & Recreation', 'Theme Park', 5
+    UNION ALL SELECT 'Entertainment & Recreation', 'Pool & Billiards Centre', 6
+    UNION ALL SELECT 'Entertainment & Recreation', 'Concert & Event Venue', 7
+    UNION ALL SELECT 'Entertainment & Recreation', 'Exhibition & Expo Centre', 8
+) AS v
+JOIN vendor_categories vc ON vc.name = v.category
+ON DUPLICATE KEY UPDATE name = VALUES(name);

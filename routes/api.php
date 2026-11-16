@@ -9,6 +9,7 @@ use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\StoreOnboardingController;
 use App\Http\Controllers\API\StoreRegistrationController;
+use App\Http\Controllers\API\VendorMasterController;
 use App\Http\Controllers\VoucherCartController;
 use App\Http\Controllers\API\VouchersController;
 use App\Http\Controllers\Auth\GoerOneAuthController;
@@ -200,6 +201,18 @@ Route::middleware('auth:sanctum')->prefix('store/registration')->group(function 
     Route::post('/approve', [StoreRegistrationController::class, 'approve']);
     Route::post('/reject', [StoreRegistrationController::class, 'reject']);
     Route::post('/history', [StoreRegistrationController::class, 'history']);
+});
+
+// Vendor category / vendor type master. Deliberately NOT behind EnsureStoreApproved: draft stores load the
+// category + type dropdowns during onboarding. Admin-only actions are enforced inside the controller (UserType 1).
+Route::middleware('auth:sanctum')->prefix('vendor-master')->group(function () {
+    Route::post('/options', [VendorMasterController::class, 'options']);              // dropdowns (active only)
+    Route::post('/', [VendorMasterController::class, 'index']);                       // admin: full list
+    Route::post('/category/save', [VendorMasterController::class, 'saveCategory']);
+    Route::post('/type/save', [VendorMasterController::class, 'saveType']);
+    Route::post('/status', [VendorMasterController::class, 'setStatus']);
+    Route::post('/category/delete', [VendorMasterController::class, 'deleteCategory']);
+    Route::post('/type/delete', [VendorMasterController::class, 'deleteType']);
 });
 
 Route::get('/store-pay/resolve/{handle}', [StoreController::class, 'resolveByHandle'])->middleware('throttle:60,1');
