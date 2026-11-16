@@ -30,14 +30,28 @@ class StoreOnboardingController extends Controller
     /** Statuses in which the owner may still edit */
     private const EDITABLE = [Store::STATUS_DRAFT, Store::STATUS_REJECTED];
 
-    public function show(Request $request)
+   public function show(Request $request)
     {
         $store = $this->currentStore($request);
         if (!$store instanceof Store) {
             return $store;
         }
 
-        return $this->ok('Success', $store);
+        $extra = [];
+
+        // Approved while still holding the limited 'onboarding' token: swap it for a full one.
+        // StoreRegister.jsx picks up `access_token` from this response and saves it.
+        if ($store->isApproved() && !$request->user()->tokenCan('*')) {
+            $newToken = $store->createToken('store-token', ['*'])->plainTextToken; // create first
+            $request->user()->currentAccessToken()->delete();                      // then retire the old one
+
+            $extra = [
+                'access_token' => $newToken,
+                'token_type' => 'Bearer',
+            ];
+        }
+
+        return $this->ok('Success', $store, $extra);
     }
 
     public function saveStep(Request $request, int $step)
@@ -366,11 +380,11 @@ class StoreOnboardingController extends Controller
         return $store;
     }
 
-    private function ok(string $message, Store $store)
+    private function ok(string $message, Store $store, array $extra = [])
     {
         $store->load('images');
 
-        return response()->json([
+        return response()->json(array_merge([
             'status' => ['success' => true, 'httpStatus' => 200],
             'message' => $message,
             'store' => $store,
@@ -379,7 +393,7 @@ class StoreOnboardingController extends Controller
             'rejection_reason' => $store->registration_status === Store::STATUS_REJECTED
                 ? $store->rejection_reason
                 : null,
-        ]);
+        ], $extra));
     }
 
     private function fail(string $message, int $http)

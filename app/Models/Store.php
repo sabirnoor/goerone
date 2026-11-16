@@ -122,6 +122,19 @@ class Store extends Authenticatable
         return $missing;
     }
 
+    // app/Models/Store.php
+    public static function makeStoreCode($agencyId): string
+    {
+        do {
+            $code = substr(
+                $agencyId . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT) . now()->format('mdHis'),
+                0, 16
+            );
+        } while (static::where('store_id', $code)->exists());
+
+        return $code;
+    }
+
     public function isApproved(): bool
     {
         return $this->registration_status === self::STATUS_APPROVED;

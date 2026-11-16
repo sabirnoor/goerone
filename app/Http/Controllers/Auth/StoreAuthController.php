@@ -576,6 +576,7 @@ class StoreAuthController extends Controller
             $id = Store::insertGetId([
                 'AgencyID' => $AgencyID,
                 'UserSysId' => $AgencyID,
+                'store_id' => Store::makeStoreCode($AgencyID),
                 'store_name' => '',
                 'phone' => $phone,
                 'email' => null,
