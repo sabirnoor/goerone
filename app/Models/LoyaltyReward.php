@@ -259,6 +259,7 @@ class LoyaltyReward extends Model
                 }
             })
             ->where('reward.parent_id', 0)
+            ->where('reward.isdefault', 0)
             ->groupBy('reward.reward_id')
             ->orderBy('reward.reward_id', 'DESC');
             // ->paginate($perPage);

@@ -471,3 +471,77 @@ ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 ALTER TABLE vendor_categories
   ADD COLUMN icon VARCHAR(255) NULL AFTER is_food;
+
+  ALTER TABLE redemption
+ADD COLUMN pg_fee DECIMAL(18,2) NOT NULL DEFAULT 0.00 AFTER discount;
+
+
+INSERT INTO reward (
+    parent_id,
+    AgencyID,
+    UserSysId,
+    program_id,
+    reward_name,
+    description,
+    points_required,
+    is_active,
+    approval_status,
+    reject_reason,
+    start_date,
+    end_date,
+    stock_quantity,
+    dealtype,
+    rewardtype,
+    dealvalue,
+    ownervalue,
+    custvalue,
+    ordervalue,
+    discount_enabled,
+    goerone_discount_type,
+    goerone_discount_source,
+    store_disc_type,
+    store_disc_value,
+    rewardvalue,
+    maxdiscountvalue,
+    maxdiscount_slabs,
+    store_maxdiscount_slabs,
+    max_reward_value,
+    isdefault,
+    created_at,
+    updated_at,
+    reward_logo
+) VALUES (
+    0,
+    97,              -- Replace with AgencyID
+    97,              -- Replace with UserSysId
+    NULL,
+    'Default Reward (No Offer)',
+    'Default fallback reward applied when no other eligible reward is available.',
+    0,
+    1,
+    1,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    NULL,
+    0,
+    0,
+    0,
+    0,
+    0,
+    NULL,
+    '[]',
+    '[]',
+    0,
+    1,
+    NOW(),
+    NOW(),
+    NULL
+);

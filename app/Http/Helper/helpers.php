@@ -834,7 +834,6 @@ function SurepassPanVerify($data, $IsProd = 0)
     }
 }
 
-
 function calculateRewardDiscount(float $orderAmount, array $reward): array
 {
     // value + type (0 = %, 1 = fixed) applied on a base amount
@@ -843,14 +842,11 @@ function calculateRewardDiscount(float $orderAmount, array $reward): array
         return ((int) $type === 0) ? ($base * $value / 100) : $value;
     };
 
-    // max_discount of the slab that matches the order amount
+    // Get max discount cap from the matching slab
     $getSlabCap = function ($slabs, float $amount): ?float {
-        if (is_string($slabs)) {
-            $slabs = json_decode($slabs, true);
-        }
-        if (empty($slabs) || !is_array($slabs)) {
-            return null; // no cap
-        }
+        if (is_string($slabs)) { $slabs = json_decode($slabs, true);}
+        if (empty($slabs) || !is_array($slabs)) { return null; }
+
         foreach ($slabs as $slab) {
             $from = (float) ($slab['from'] ?? 0);
             $to   = $slab['to'] ?? null;
@@ -858,39 +854,45 @@ function calculateRewardDiscount(float $orderAmount, array $reward): array
                 return isset($slab['max_discount']) ? (float) $slab['max_discount'] : null;
             }
         }
+
         return null;
     };
 
-    // Step 1: commission from vendor (on order amount)
-    $commission = $applyValue($orderAmount, $reward['dealtype'] ?? 0, $reward['dealvalue'] ?? 0);
+    // Step 1: Calculate commission from vendor on order amount
+    $commission = $applyValue($orderAmount, $reward['dealtype'] ?? 0, $reward['dealvalue'] ?? 0 );
     $commission = round(max($commission, 0), 2);
 
     $enabled = (int) ($reward['discount_enabled'] ?? 0);
+    $discountSource = (int) ($reward['goerone_discount_source'] ?? 0);
 
-    // Step 2a: GoerOne discount (from commission)
+    // Step 2a: GoerOne discount
     $goerOne = 0.0;
+
     if (in_array($enabled, [0, 2], true)) {
-        $goerOne = $applyValue($commission, $reward['goerone_discount_type'] ?? 0, $reward['custvalue'] ?? 0);
-        $cap = $getSlabCap($reward['maxdiscount_slabs'] ?? null, $orderAmount);
-        if ($cap !== null) {
-            $goerOne = min($goerOne, $cap);
-        }
-        $goerOne = min($goerOne, $commission);
+        // Source 0 = Commission
+        // Source 1 = Order amount
+        $goerOneBase = ($discountSource === 1) ? $orderAmount : $commission;
+        $goerOne = $applyValue($goerOneBase, $reward['goerone_discount_type'] ?? 0, $reward['custvalue'] ?? 0 );
+        $cap = $getSlabCap( $reward['maxdiscount_slabs'] ?? null, $orderAmount );
+        if ($cap !== null) {  $goerOne = min($goerOne, $cap); }
+
+        // Do not allow commission-based discount to exceed commission.
+        // Order-based discount can be higher than commission.
+        if ($discountSource === 0) { $goerOne = min($goerOne, $commission); }
     }
 
-    // Step 2b: Store discount (from order amount)
+    // Step 2b: Store discount (always from order amount)
     $store = 0.0;
+
     if (in_array($enabled, [1, 2], true)) {
-        $store = $applyValue($orderAmount, $reward['store_disc_type'] ?? 0, $reward['store_disc_value'] ?? 0);
-        $cap = $getSlabCap($reward['store_maxdiscount_slabs'] ?? null, $orderAmount);
-        if ($cap !== null) {
-            $store = min($store, $cap);
-        }
+        $store = $applyValue($orderAmount,$reward['store_disc_type'] ?? 0,$reward['store_disc_value'] ?? 0);
+        $cap = $getSlabCap($reward['store_maxdiscount_slabs'] ?? null,$orderAmount );
+        if ($cap !== null) { $store = min($store, $cap);}
     }
 
     $goerOne = round(max($goerOne, 0), 2);
     $store   = round(max($store, 0), 2);
-    $total   = round(min($goerOne + $store, $orderAmount), 2);
+    $total = round(min($goerOne + $store, $orderAmount), 2);
 
     return [
         'order_amount'      => round($orderAmount, 2),
