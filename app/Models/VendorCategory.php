@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class VendorCategory extends Model
 {
-    protected $fillable = ['name', 'is_food', 'sort_order', 'is_active'];
+    protected $fillable = ['name', 'is_food', 'icon', 'sort_order', 'is_active'];
 
     protected $casts = [
         'is_food' => 'boolean',

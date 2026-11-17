@@ -468,3 +468,6 @@ FROM (
 ) AS v
 JOIN vendor_categories vc ON vc.name = v.category
 ON DUPLICATE KEY UPDATE name = VALUES(name);
+
+ALTER TABLE vendor_categories
+  ADD COLUMN icon VARCHAR(255) NULL AFTER is_food;

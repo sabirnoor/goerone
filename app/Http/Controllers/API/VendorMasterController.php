@@ -61,6 +61,7 @@ class VendorMasterController extends Controller
             'id' => $c->id,
             'name' => $c->name,
             'is_food' => $c->is_food,
+            'icon' => $c->icon,
             'is_active' => $c->is_active,
             'types' => ($types[$c->id] ?? collect())->map(fn ($t) => [
                 'id' => $t->id,
@@ -107,6 +108,8 @@ class VendorMasterController extends Controller
             'id' => 'nullable|integer|exists:vendor_categories,id',
             'name' => ['required', 'string', 'max:120', Rule::unique('vendor_categories', 'name')->ignore($request->id)],
             'is_food' => 'nullable|boolean',
+            'icon' => 'nullable|image|mimes:png,jpg,jpeg,webp|max:100|dimensions:min_width=64,min_height=64,max_width=512,max_height=512,ratio=1/1',
+            'remove_icon' => 'nullable|boolean',
             'sort_order' => 'nullable|integer|min:0|max:100000',
             'is_active' => 'nullable|boolean',
         ]);
@@ -116,6 +119,25 @@ class VendorMasterController extends Controller
         if ($request->has('is_food')) $data['is_food'] = $request->boolean('is_food');
         if ($request->has('sort_order')) $data['sort_order'] = (int) $request->sort_order;
         if ($request->has('is_active')) $data['is_active'] = $request->boolean('is_active');
+
+        $agencyId = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID; // adminOrFail guarantees UserType == 1
+        $oldIcon = $request->filled('id') ? VendorCategory::where('id', $request->id)->value('icon') : null;
+
+        if ($request->hasFile('icon')) {
+            $file = $request->file('icon');
+            $dir  = 'uploads/category/' . $agencyId;
+            $name = 'icon_' . time() . '_' . uniqid() . '.' . $file->extension();
+            $file->move(public_path($dir), $name);
+            $data['icon'] = rtrim(env('APP_URL'), '/') . '/' . $dir . '/' . $name;
+        } elseif ($request->boolean('remove_icon')) {
+            $data['icon'] = null;
+        }
+
+        // delete the replaced / removed file
+        if ($oldIcon && array_key_exists('icon', $data)) {
+            $old = public_path(ltrim(parse_url($oldIcon, PHP_URL_PATH), '/'));
+            if (is_file($old)) @unlink($old);
+        }
 
         if ($request->filled('id')) {
             $cat = VendorCategory::find($request->id);

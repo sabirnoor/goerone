@@ -1624,7 +1624,7 @@ class LoyaltyController extends Controller
                     'reward_name' => 'required|max:191',
                     'description' => 'required',
                     // Reward deal values
-                    'ordervalue' => 'required|numeric|gt:0',
+                    'ordervalue' => 'sometimes|nullable|numeric|gte:0',
                     'dealvalue' => 'required|numeric|gt:0',
                     // GoerOne discount fields are checked below, only when discount_enabled includes GoerOne.
                     'custvalue'         => 'nullable|numeric|min:0|max:100',

@@ -183,15 +183,13 @@ class StoreController extends Controller
     {
         try {
             // $categories = collect(self::VENDOR_CATEGORIES)->values();
-            $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
+            $rows = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->get(['name', 'icon']);
 
             return response()->json([
-                'status' => [
-                    'success' => true,
-                    'httpStatus' => 200,
-                ],
+                'status' => ['success' => true, 'httpStatus' => 200],
                 'message' => 'Success',
-                'data' => $categories,
+                'data'  => $rows->pluck('name')->values(),
+                'icons' => $rows->filter(fn ($r) => $r->icon)->pluck('icon', 'name'),
             ]);
         } catch (\Throwable $th) {
             return response()->json([
@@ -758,8 +756,11 @@ class StoreController extends Controller
          */
 
         // $categories = collect(self::VENDOR_CATEGORIES)->values();
-        $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
-
+        // $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
+        $catRows = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->get(['name', 'icon']);
+        $categories = $catRows->pluck('name')->values();
+        // name => icon url (only categories that have an icon); (object) so an empty map is {} in JSON, not []
+        $categoryIcons = (object) $catRows->filter(fn ($r) => $r->icon)->pluck('icon', 'name')->all();
         /*
         * ---------------------------------------------------------
         * No Stores Found
@@ -781,6 +782,7 @@ class StoreController extends Controller
                     'nextOffset' => null,
                     'radiusKm' => $radius,
                     'categories' => $categories,
+                    'categoryIcons' => $categoryIcons,
                 ]
             );
         }
@@ -811,6 +813,7 @@ class StoreController extends Controller
                 'nextOffset' => $hasMore ? $offset + $limit : null,
                 'radiusKm' => $radius,
                 'categories' => $categories,
+                'categoryIcons' => $categoryIcons,
             ]
         );
         } catch (\Throwable $th) {
