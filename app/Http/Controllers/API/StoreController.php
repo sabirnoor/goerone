@@ -278,29 +278,35 @@ class StoreController extends Controller
                 }
 
                 if (!empty($storeId)) {
-                    $existingStore = Store::find($storeId);
+                $existingStore = Store::find($storeId);
 
-                    $emailRules = empty($existingStore->email)
-                        ? [
-                            'required',
-                            'string',
-                            'lowercase',
-                            'email',
-                            'max:255',
-                            Rule::unique('stores', 'email')->ignore($storeId, 'id'),
-                        ]
-                        : ['prohibited'];
+                $isStoreUser = $request->user()->UserType != 1;
 
-                    $validator = Validator::make($request->all(), array_merge($sharedRules, [
-                        'store_name' => 'required|string|max:255',
-                        'phone' => [
-                            'required',
-                            'digits_between:9,12',
-                            Rule::unique('stores', 'phone')->ignore($storeId, 'id'),
-                        ],
-                        'email' => $emailRules,
-                    ]));
+                if ($isStoreUser) {
+                    // Store users cannot submit email while updating.
+                    $emailRules = ['prohibited'];
                 } else {
+                    // Admin can update email.
+                    $emailRules = [
+                        'required',
+                        'string',
+                        'lowercase',
+                        'email',
+                        'max:255',
+                        Rule::unique('stores', 'email')->ignore($storeId, 'id'),
+                    ];
+                }
+
+                $validator = Validator::make($request->all(), array_merge($sharedRules, [
+                    'store_name' => 'required|string|max:255',
+                    'phone' => [
+                        'required',
+                        'digits_between:9,12',
+                        Rule::unique('stores', 'phone')->ignore($storeId, 'id'),
+                    ],
+                    'email' => $emailRules,
+                ]));
+            } else {
                     $validator = Validator::make($request->all(), array_merge($sharedRules, [
                         'store_name' => 'required|string|max:255',
                         'phone' => ['required', 'digits_between:9,12', Rule::unique('stores', 'phone')->ignore($storeId, 'id')],

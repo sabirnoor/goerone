@@ -609,7 +609,6 @@ class LoyaltyController extends Controller
             $storeData = $accessToken->tokenable;
 
             $pgFee = 0;
-
             // Calculate platform fee only when PG fee is applicable
             if (
                 $request->boolean('pg_fee') &&
@@ -620,7 +619,7 @@ class LoyaltyController extends Controller
                 $platformFeePercent = (float) $storeData->platform_fee;
 
                 $pgFee = round(
-                    ((float) ($request->order_amount ?? 0) * $platformFeePercent) / 100,
+                    (((float) $request->order_amount - (float) ($discountCust ?? 0)) * $platformFeePercent) / 100,
                     2
                 );
             }
