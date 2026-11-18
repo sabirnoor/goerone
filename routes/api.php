@@ -68,7 +68,6 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
         Route::post('user_card', [LoyaltyController::class, 'loyaltyUserCard']);
         Route::post('reward', [LoyaltyController::class, 'loyaltyReward']);
         Route::post('rewardparent/{parent_id}', [LoyaltyController::class, 'loyaltyRewardPrent']);
-        //Route::post('redeem', [LoyaltyController::class, 'redeemReward']);
         Route::post('redeem', [LoyaltyController::class, 'redeemReward']);
         Route::post('redeem-details', [LoyaltyController::class, 'redeemRewardDetails']);
         Route::post('redemptionhistory', [LoyaltyController::class, 'getRedemptionHistoryAll']);
