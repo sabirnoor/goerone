@@ -37,10 +37,11 @@ class StoreRegistrationController extends Controller
         $validator = Validator::make($request->all(), [
             'id' => 'required|integer',
             'platform_fee' => 'required|numeric|min:0|max:100',
-            'platform_fee_payer' => ['required', Rule::in(['store', 'customer'])],
+            'platform_fee_payer' => ['required', Rule::in(['store', 'goerone'])],
             'relation_manager' => 'nullable|integer|exists:users,id',
             'enquiry_enabled' => 'nullable|boolean',
             'payment_enabled' => 'nullable|boolean',
+            'email' => ['nullable', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($request->id)],
         ]);
         if ($validator->fails()) {
             return $this->fail($validator->errors()->first(), 422);
@@ -56,6 +57,12 @@ class StoreRegistrationController extends Controller
         $store = Store::where('id', $request->id)->where('AgencyID', $admin->id)->first();
         if (!$store) {
             return $this->fail('Store not found.', 404);
+        }
+
+        // Email is mandatory to go live: use the one admin typed here, else the one on the store.
+        $email = $request->filled('email') ? strtolower(trim($request->email)) : trim((string) $store->email);
+        if ($email === '') {
+            return $this->fail('This store has no email. Ask the store to fill in their email, or enter it here before approving.', 422);
         }
 
         if ($store->registration_status === Store::STATUS_APPROVED) {
@@ -75,9 +82,10 @@ class StoreRegistrationController extends Controller
             );
         }
 
-        DB::transaction(function () use ($request, $store, $admin, $from, $enquiry, $payment, $onBehalf) {
+        DB::transaction(function () use ($request, $store, $admin, $from, $enquiry, $payment, $onBehalf,$email,) {
             $update = [
                 'registration_status' => Store::STATUS_APPROVED,
+                'email' => $email,
                 'is_active' => 1,
                 'approved_at' => now(),
                 'approved_by' => $admin->id,

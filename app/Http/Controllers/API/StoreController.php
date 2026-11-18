@@ -278,13 +278,29 @@ class StoreController extends Controller
                 }
 
                 if (!empty($storeId)) {
+                    $existingStore = Store::find($storeId);
+
+                    $emailRules = empty($existingStore->email)
+                        ? [
+                            'required',
+                            'string',
+                            'lowercase',
+                            'email',
+                            'max:255',
+                            Rule::unique('stores', 'email')->ignore($storeId, 'id'),
+                        ]
+                        : ['prohibited'];
+
                     $validator = Validator::make($request->all(), array_merge($sharedRules, [
                         'store_name' => 'required|string|max:255',
-                        'phone' => ['required', 'digits_between:9,12', Rule::unique('stores', 'phone')->ignore($storeId)],
-                        // 'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($storeId)],
+                        'phone' => [
+                            'required',
+                            'digits_between:9,12',
+                            Rule::unique('stores', 'phone')->ignore($storeId, 'id'),
+                        ],
+                        'email' => $emailRules,
                     ]));
                 } else {
-
                     $validator = Validator::make($request->all(), array_merge($sharedRules, [
                         'store_name' => 'required|string|max:255',
                         'phone' => ['required', 'digits_between:9,12', Rule::unique('stores', 'phone')->ignore($storeId, 'id')],
@@ -533,7 +549,9 @@ class StoreController extends Controller
                             'message' => 'You are not authorized to update this store.',
                         ], 403);
                     }
-                    unset($storeData['email']);
+                    if (!empty($existingStore->email)) {
+                        unset($storeData['email']);
+                    }
                     $storeData['UserSysId'] =  $UserSysId;
                     $storeData['updated_by_store'] = $isAgency ? null  : $user->id;
                     Store::where('id', $storeId)->update($storeData);

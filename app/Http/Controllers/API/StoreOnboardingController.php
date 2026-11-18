@@ -155,6 +155,9 @@ class StoreOnboardingController extends Controller
 
         // Check the data itself (not just onboarding_step): steps 1-3 carry the mandatory fields.
         $missing = $store->missingRegistrationFields();
+        if (trim((string) $store->email) === '') {
+            $missing[] = 'Email';
+        }
         if ($missing) {
             return $this->fail('Please complete: ' . implode(', ', $missing) . '.', 422);
         }
@@ -200,7 +203,7 @@ class StoreOnboardingController extends Controller
                     'vendor_category_id' => ['required', 'integer', 'exists:vendor_categories,id'],
                     'vendor_type_id' => ['nullable', 'integer', 'exists:vendor_types,id'],
                     'product_types' => 'nullable|string',
-                    'email' => ['nullable', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($store->id)],
+                    'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($store->id)],
                 ];
 
             case 2:
@@ -287,7 +290,7 @@ class StoreOnboardingController extends Controller
                     // 'vendor_category' => $request->vendor_category,
                     ...$vm,
                     'product_types' => $request->filled('product_types') ? $request->product_types : null,
-                    'email' => $request->filled('email') ? strtolower(trim($request->email)) : null,
+                    'email' => strtolower(trim($request->email)),
                 ];
 
             case 2:
