@@ -559,9 +559,31 @@ class LoyaltyController extends Controller
             $request->merge(['card_id' => $card_id]);
             $request->merge(['status' => 'SUCCESS']);
             $accessToken->load(['tokenable' => function ($query) {
-                $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired'); // Add store fields
+                $query->select('id', 'store_name', 'email', 'OTPAllowed', 'swipelimit', 'monthlyswipe', 'FaceRecognition', 'noOfPass', 'vendortype', 'event_date', 'rewardrequired','platform_fee_payer',
+                'platform_fee'); // Add store fields
             }]);
             $storeData = $accessToken->tokenable;
+
+            $pgFee = 0;
+
+            // Calculate platform fee only when PG fee is applicable
+            if (
+                $request->boolean('pg_fee') &&
+                $storeData &&
+                $storeData->platform_fee_payer === 'store' &&
+                (float) $storeData->platform_fee > 0
+            ) {
+                $platformFeePercent = (float) $storeData->platform_fee;
+
+                $pgFee = round(
+                    ((float) ($request->order_amount ?? 0) * $platformFeePercent) / 100,
+                    2
+                );
+            }
+
+            // Cash flag from API
+            $isCash = (int) $request->input('is_cash', 0);
+
             $TotalRewardEarning = RewardEarn::TotalRewardEarning($user, ['user_id' => $request->user_id]);
 
             $availablereward = isset($TotalRewardEarning->total_rewardearn) ? (float)$TotalRewardEarning->total_rewardearn : 0;
@@ -823,7 +845,7 @@ class LoyaltyController extends Controller
 
                         // Call the stored procedure
                         $results = DB::select(
-                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message, @redemption_id)',
+                            'CALL process_redemption(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @status, @message, @redemption_id)',
                             [
                                 $request->user_id,
                                 $request->card_id,
@@ -839,6 +861,8 @@ class LoyaltyController extends Controller
                                 !empty($redem_id) ? 'GTR' . $redem_id : 0,
                                 !empty($receipt) ? $receipt : null,
                                 !empty($referneceNo) ? $referneceNo : null,
+                                $pgFee,
+                                $isCash
                             ]
                         );
                         // Get the output parameters

@@ -416,6 +416,7 @@ class WebhookController extends Controller
                     $bookingProcess = json_decode($bookingProcess, 1);
 
                     if ($udf2 == 1 && $Walletstatus == 1) {
+                        $bookingProcess['pg_fee'] = true;
                         Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
                         // pr($bookingProcess);
                         // die;
