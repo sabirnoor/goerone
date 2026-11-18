@@ -229,7 +229,7 @@ class StoreController extends Controller
                     'food_type' => ['nullable', Rule::in(['veg', 'non_veg', 'both'])],
                     // platform fee (percentage) – admin only, see below
                     'platform_fee' => 'nullable|numeric|min:0|max:100',
-                    'platform_fee_payer' => ['nullable', Rule::in(['store', 'customer'])],
+                    'platform_fee_payer' => ['nullable', Rule::in(['store', 'goerone'])],
                     // GSTIN, optional. e.g. 22AAAAA0000A1Z5
                     'gst_number' => ['nullable', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/'],
                 ];

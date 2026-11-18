@@ -545,3 +545,6 @@ INSERT INTO reward (
     NOW(),
     NULL
 );
+
+ALTER TABLE `redemption`
+ADD COLUMN `is_cash` TINYINT(1) NOT NULL DEFAULT 0;
