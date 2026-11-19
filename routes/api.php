@@ -21,6 +21,7 @@ use App\Http\Controllers\Payment\IndexController;
 use App\Http\Controllers\Payment\ScanPayController;
 use App\Http\Controllers\PerformanceReportController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\StoreSettlementController;
 use App\Http\Controllers\VoucherCheckoutController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\WalletController;
@@ -38,6 +39,10 @@ Route::get('/usertype', function (Request $request) {
 
 Route::prefix("webhook")->group(function () {
     Route::match(['get', 'post'], '/secureservereasebuzz', [WebhookController::class, 'secureservereasebuzz']);
+});
+
+Route::prefix('store-settlement')->group(function () {
+    Route::get('/generate', [StoreSettlementController::class, 'generate']);
 });
 // EnsureStoreApproved: a Store token that is draft / pending / rejected gets a 403 on everything in this group.
 // Admin / staff / customer tokens (User model) pass straight through.
@@ -124,6 +129,7 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
         Route::post('/review', [VouchersController::class, 'review']);
         Route::post('/approvals', [VouchersController::class, 'approvalList']);
     });
+
     Route::prefix("products")->group(function () {
         Route::any('/fetch', [ProductController::class, 'fetchproducts'])->name('products.fetch');
         Route::post('/create', [ProductController::class, 'createproducts'])->name('products.create');
@@ -150,6 +156,7 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
+
     Route::post('wallet/history', [WalletController::class, 'getWalletHistory']);
     Route::post('/wallet/balance', [WalletController::class, 'getWalletBalance']);
     Route::post('/pan-verify', [PanController::class, 'panverify']);
@@ -183,9 +190,6 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::any('/verify-otp-store', [StoreAuthController::class, 'verifyOtpStore']);
 Route::post('/store/start-registration', [StoreAuthController::class, 'startRegistration'])->middleware('throttle:10,1');
-// DISABLED: the old email/password signup is public and would now create an *approved* store with no review
-// (registration_status defaults to 'approved'). Self-registration goes through OTP -> /store/start-registration.
-// Route::post('/store/register', [StoreAuthController::class, 'register']);
 
 // Store onboarding (draft -> pending). Store token, deliberately NOT behind EnsureStoreApproved.
 Route::middleware('auth:sanctum')->prefix('store/onboarding')->group(function () {
@@ -220,24 +224,30 @@ Route::middleware('auth:store')->group(function () {
     Route::post('/store/logout', [StoreAuthController::class, 'logout']);
     Route::get('/store/profile', [StoreAuthController::class, 'profile']);
 });
+
 Route::middleware('apiKey')->group(function () {
+
     Route::get('/legal/public/{type}', [LegalPolicyController::class, 'publicShow']);
+
     Route::prefix('sms')->group(function () {
         Route::post('/sendotp', [MessageController::class, 'sendOTP']);
         Route::post('/verifyotp', [MessageController::class, 'verifyOtp']);
     });
+
     Route::prefix("payment")->group(function () {
         Route::any('/scan-qrcode', [ScanPayController::class, 'scanQrcode'])->name('scan-qrcode');
         Route::any('/scan-pay', [ScanPayController::class, 'scanPay'])->name('scan-pay');
         Route::any('/payment-history', [ScanPayController::class, 'getPaymentHistory'])->name('payment-history');
         Route::any('/user-balance', [ScanPayController::class, 'getUserBalance'])->name('user-balance');
     });
+
     Route::prefix('GoerOne')->group(function () {
         Route::post('login', [GoerOneAuthController::class, 'login']);
         Route::post('register', [GoerOneAuthController::class, 'register']);
         Route::post('otp-verify', [GoerOneAuthController::class, 'otpverify']);
         Route::post('/users/deactivate', [GoerOneAuthController::class, 'deactivate']);
     });
+
     Route::post('/loyalty/program', [LoyaltyController::class, 'getLoyaltyProgram']);
     Route::post('/loyalty/city-service', [LoyaltyController::class, 'cityService']);
 
@@ -255,14 +265,23 @@ Route::middleware('apiKey')->group(function () {
 
     Route::post('/store-pay/create', [StoreController::class, 'createQr']);
     Route::post('/store-pay/initiate', [StoreController::class, 'initiate']);
+
     Route::get('/store-pay/status/{ref}', function ($ref) {
         $p = StorePayment::where('reference', $ref)->firstOrFail();
         return ['status' => $p->status, 'paid_at' => $p->paid_at];
     });
+
+    Route::prefix('store-settlement')->group(function () {
+    Route::post('/',[StoreSettlementController::class, 'index']);
+    Route::get('/{id}',[StoreSettlementController::class, 'show']);
+    Route::post('/{id}/paid',[StoreSettlementController::class, 'markPaid']);
+    Route::post('/{id}/partial-payment',[StoreSettlementController::class, 'partialPayment']);
+    Route::post('/bulk-paid',[StoreSettlementController::class, 'bulkPaid']);
+    });
+
 });
+
 Route::post('/country', [DashboardController::class, 'country'])->name('country');
 Route::post('/states', [DashboardController::class, 'states'])->name('states');
 Route::post('/cities', [DashboardController::class, 'cities'])->name('cities');
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+Route::get('/user', function (Request $request) {return $request->user();})->middleware('auth:sanctum');

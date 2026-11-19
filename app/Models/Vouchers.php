@@ -46,7 +46,6 @@ class Vouchers extends Model
         'discount_source',
         'comission_type',
         'comission_value',
-        'comission_source',
     ];
 
     protected $casts = [
@@ -189,7 +188,6 @@ class Vouchers extends Model
             'vouchers.discount_source',
             'vouchers.comission_type',
             'vouchers.comission_value',
-            'vouchers.comission_source',
             'cs.store_name as created_by_store_name',
             'stores.store_name',
             'stores.email as store_email',

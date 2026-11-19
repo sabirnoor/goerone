@@ -828,22 +828,31 @@ class RewardService
             ->leftJoin('redemption', 'redemption.redemption_id', '=', 'reward_wallet_temp.redemption_id')
             // ->where('reward_wallet_temp.status', RewardWalletTemp::STATUS_SUCCESS)
             ->orderBy('reward_wallet_temp.id', 'desc')
-            ->where(
-                function ($query) use ($validated) {
-                    if (isset($validated['status']) && !empty($validated['status'])) {
-                        return $query->where('reward_wallet_temp.status', $validated['status']);
-                    }
-                    if (isset($validated['store_id']) && $validated['store_id'] > 0) {
-                        return $query->where('redemption.stores_id', $validated['store_id']);
-                    }
-                    if (!empty($validated['bookingID'])) {
-                        return $query->where('reward_wallet_temp.ReferenceNo', $validated['bookingID']);
-                    }
-                    if (!empty($validated['FromDate']) && !empty($validated['ToDate'])) {
-                        return $query->whereBetween('reward_wallet_temp.created_at', [date('Y-m-d', strtotime($validated['FromDate'])) . " 00:00:00", date('Y-m-d', strtotime($validated['ToDate'])) . " 23:59:59"]);
-                    }
-                }
-            );
+            ->where(function ($query) use ($validated) {
+            // Highest priority: Fetch exact ledger
+            if (!empty($validated['ledger_id'])) {
+                $query->where('reward_wallet_temp.id', $validated['ledger_id']);
+            }
+            // Store filter
+            elseif (!empty($validated['store_id'])) {
+                $query->where('redemption.stores_id', $validated['store_id']);
+            }
+            // Booking filter
+            elseif (!empty($validated['bookingID'])) {
+                $query->where('reward_wallet_temp.ReferenceNo', $validated['bookingID']);
+            }
+            // Date filter
+            elseif (!empty($validated['FromDate']) && !empty($validated['ToDate'])) {
+                $query->whereBetween('reward_wallet_temp.created_at', [
+                    date('Y-m-d', strtotime($validated['FromDate'])) . ' 00:00:00',
+                    date('Y-m-d', strtotime($validated['ToDate'])) . ' 23:59:59'
+                ]);
+            }
+            // Status filter
+            elseif (!empty($validated['status'])) {
+                $query->where('reward_wallet_temp.status', $validated['status']);
+            }
+        });
 
         // Filter by customer
         if ($customerId) {

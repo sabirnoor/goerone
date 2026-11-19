@@ -518,6 +518,7 @@ class WalletController extends Controller
             $validated['AgencyID'] = $AgencyID;
             $validated['UserSysId'] = $UserSysId;
             $validated['status'] = 'PENDING';
+            $validated['store_id'] = 0;
             $authUser = $request->user();
 
             
@@ -567,6 +568,7 @@ class WalletController extends Controller
                         RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
                     } else {
                         $result = $this->rewardService->addPoints($RewardInsert);
+                        
                         $payload['is_store_approved']  = ($validated['store_id'] > 0) ? 1 : 0;
                         $payload['approved_by'] = $request->user()->id;
                         $payload['approved_at']   = now();

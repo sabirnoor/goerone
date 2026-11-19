@@ -63,8 +63,7 @@ class VouchersController extends Controller
                 'redemption_type' => 'required|in:1,2,3', // 1 = online, 2 = offline, 3 = both
                 // commission to GoerOne at redeem - optional, admin only (0 = percentage, 1 = fixed)
                 'comission_type' => 'nullable|in:0,1',
-                'comission_value' => 'nullable|numeric|min:0',
-                'comission_source' => 'nullable|in:0,1', // 0 = paid from voucher amount, 1 = paid from order amount
+                'comission_value' => 'nullable|numeric|min:0'
             ]);
 
             $validator->after(function ($v) use ($request, $membershipIds) {
@@ -171,7 +170,6 @@ class VouchersController extends Controller
                                 if ($isAgency) {
                                     $dataSet['comission_type'] = (int) ($request->comission_type ?? 0);
                                     $dataSet['comission_value'] = ($request->comission_value !== null && $request->comission_value !== '') ? $request->comission_value : 0;
-                                    $dataSet['comission_source'] = (int) ($request->comission_source ?? 0);
                                 }
 
                                 // New vouchers from stores require approval.
