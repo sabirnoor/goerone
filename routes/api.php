@@ -41,9 +41,9 @@ Route::prefix("webhook")->group(function () {
     Route::match(['get', 'post'], '/secureservereasebuzz', [WebhookController::class, 'secureservereasebuzz']);
 });
 
-Route::prefix('store-settlement')->group(function () {
-    Route::get('/generate', [StoreSettlementController::class, 'generate']);
-});
+// Route::prefix('store-settlement')->group(function () {
+//     Route::get('/generate', [StoreSettlementController::class, 'generate']);
+// });
 // EnsureStoreApproved: a Store token that is draft / pending / rejected gets a 403 on everything in this group.
 // Admin / staff / customer tokens (User model) pass straight through.
 Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function () {
@@ -186,6 +186,9 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
 
     Route::post('/legal/policy', [LegalPolicyController::class, 'fetch']);
     Route::post('/legal/save', [LegalPolicyController::class, 'save']);
+
+    Route::post('store-settlements/my-list',      [StoreSettlementController::class, 'storeIndex']); // NEW
+    Route::post('store-settlements/my-show/{id}', [StoreSettlementController::class, 'storeShow'])->whereNumber('id');
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::any('/verify-otp-store', [StoreAuthController::class, 'verifyOtpStore']);
@@ -271,12 +274,16 @@ Route::middleware('apiKey')->group(function () {
         return ['status' => $p->status, 'paid_at' => $p->paid_at];
     });
 
-    Route::prefix('store-settlement')->group(function () {
-    Route::post('/',[StoreSettlementController::class, 'index']);
-    Route::get('/{id}',[StoreSettlementController::class, 'show']);
-    Route::post('/{id}/paid',[StoreSettlementController::class, 'markPaid']);
-    Route::post('/{id}/partial-payment',[StoreSettlementController::class, 'partialPayment']);
-    Route::post('/bulk-paid',[StoreSettlementController::class, 'bulkPaid']);
+    Route::prefix('store-settlements')->group(function () {
+        // fixed paths FIRST, so they can never be read as an {id}
+        Route::post('/list',      [StoreSettlementController::class, 'index']);
+        Route::post('/summary',   [StoreSettlementController::class, 'summary']);
+        Route::post('/generate',  [StoreSettlementController::class, 'generate']);
+        Route::post('/bulk-paid', [StoreSettlementController::class, 'bulkPaid']);
+        // id routes after, numeric only
+        Route::post('/show/{id}',            [StoreSettlementController::class, 'show'])->whereNumber('id');
+        Route::post('/{id}/mark-paid',       [StoreSettlementController::class, 'markPaid'])->whereNumber('id');
+        Route::post('/{id}/partial-payment', [StoreSettlementController::class, 'partialPayment'])->whereNumber('id');
     });
 
 });

@@ -548,3 +548,32 @@ INSERT INTO reward (
 
 ALTER TABLE `redemption`
 ADD COLUMN `is_cash` TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE store_settlement
+  ADD COLUMN calc_version TINYINT NOT NULL DEFAULT 1 AFTER status,
+  ADD COLUMN direction VARCHAR(20) NULL COMMENT 'store_receives | store_pays' AFTER calc_version,
+  ADD COLUMN payable_to_store DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN receivable_from_store DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN net_amount DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '+ GoerOne owes store, - store owes GoerOne',
+  ADD COLUMN paid_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_pg_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_store_discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_goerone_discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN run_date DATE NULL;
+  
+  ALTER TABLE store_settlement_items
+  ADD COLUMN item_type VARCHAR(30) NOT NULL DEFAULT 'redemption',
+  ADD COLUMN source_id BIGINT UNSIGNED NULL,
+  ADD COLUMN entry_kind VARCHAR(20) NOT NULL DEFAULT 'original',
+  ADD COLUMN side VARCHAR(12) NULL COMMENT 'payable (to store) | receivable (from store)',
+  ADD COLUMN is_cash TINYINT NULL,
+  ADD COLUMN order_amount DECIMAL(12,2) NULL,
+  ADD COLUMN store_discount DECIMAL(12,2) NULL,
+  ADD COLUMN goerone_discount DECIMAL(12,2) NULL,
+  ADD COLUMN commission DECIMAL(12,2) NULL,
+  ADD COLUMN pg_fee DECIMAL(12,2) NULL,
+  ADD COLUMN eligible_on DATE NULL;
+  
+  ALTER TABLE store_settlement_payments
+  ADD COLUMN direction VARCHAR(20) NULL COMMENT 'store_receives | store_pays';
+CREATE INDEX idx_ssp_settlement ON store_settlement_payments (settlement_id);
