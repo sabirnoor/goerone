@@ -426,6 +426,17 @@ class WebhookController extends Controller
                         Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemResponse.json', json_encode($resultSet));
                         return response()->json(['status' => 'success', 'resultSet' => $resultSet]);
                     }
+                   else if ($udf2 == 2 && $Walletstatus == 1) {
+                        $bookingProcess['pg_fee'] = true;
+                        Storage::disk('public')->put('logs/Webhook/voucher/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
+                        // pr($bookingProcess);
+                        // die;
+                        $URL = $this->API_URL . 'voucher/voucher-purchase';
+                        $response = HttpRequest($URL, $bookingProcess, $AgencyID, $newPlain);
+                        $resultSet = json_decode($response, 1);
+                        Storage::disk('public')->put('logs/Webhook/voucher/' . $BookingID . '/' . $currentDate . '_redeemResponse.json', json_encode($resultSet));
+                        return response()->json(['status' => 'success', 'resultSet' => $resultSet]);
+                    }
                 } else {
                     /// wallet recharge failed
                     $notification = [

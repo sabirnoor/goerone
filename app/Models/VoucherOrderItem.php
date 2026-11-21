@@ -15,12 +15,23 @@ class VoucherOrderItem extends Model
         'quantity',
         'line_total',
         'voucher_snapshot',
+        // settlement snapshot
+        'customer_discount',
+        'discount_source',
+        'comission_type',
+        'comission_value',
+        'commission_amount',
+        'pg_fee'
     ];
 
     protected $casts = [
         'unit_price'       => 'decimal:2',
         'line_total'       => 'decimal:2',
+        'customer_discount' => 'decimal:2',
+        'comission_value'  => 'decimal:2',
+        'commission_amount' => 'decimal:2',
         'voucher_snapshot' => 'array',
+        'pg_fee' => 'decimal:2'
     ];
 
     public function order()

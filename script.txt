@@ -548,3 +548,93 @@ INSERT INTO reward (
 
 ALTER TABLE `redemption`
 ADD COLUMN `is_cash` TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE store_settlement
+  ADD COLUMN calc_version TINYINT NOT NULL DEFAULT 1 AFTER status,
+  ADD COLUMN direction VARCHAR(20) NULL COMMENT 'store_receives | store_pays' AFTER calc_version,
+  ADD COLUMN payable_to_store DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN receivable_from_store DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN net_amount DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '+ GoerOne owes store, - store owes GoerOne',
+  ADD COLUMN paid_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_pg_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_store_discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN total_goerone_discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN run_date DATE NULL;
+  
+  ALTER TABLE store_settlement_items
+  ADD COLUMN item_type VARCHAR(30) NOT NULL DEFAULT 'redemption',
+  ADD COLUMN source_id BIGINT UNSIGNED NULL,
+  ADD COLUMN entry_kind VARCHAR(20) NOT NULL DEFAULT 'original',
+  ADD COLUMN side VARCHAR(12) NULL COMMENT 'payable (to store) | receivable (from store)',
+  ADD COLUMN is_cash TINYINT NULL,
+  ADD COLUMN order_amount DECIMAL(12,2) NULL,
+  ADD COLUMN store_discount DECIMAL(12,2) NULL,
+  ADD COLUMN goerone_discount DECIMAL(12,2) NULL,
+  ADD COLUMN commission DECIMAL(12,2) NULL,
+  ADD COLUMN pg_fee DECIMAL(12,2) NULL,
+  ADD COLUMN eligible_on DATE NULL;
+  
+  ALTER TABLE store_settlement_payments
+  ADD COLUMN direction VARCHAR(20) NULL COMMENT 'store_receives | store_pays';
+CREATE INDEX idx_ssp_settlement ON store_settlement_payments (settlement_id);
+
+ALTER TABLE store_settlement_items MODIFY redemption_id BIGINT UNSIGNED NULL;
+
+ALTER TABLE voucher_order_items
+  ADD COLUMN customer_discount DECIMAL(12,2) NULL COMMENT 'discount deducted from the customer price for this line',
+  ADD COLUMN discount_source   TINYINT NULL COMMENT '0 admin funded, 1 store funded',
+  ADD COLUMN comission_type    TINYINT NULL COMMENT '0 percentage, 1 fixed',
+  ADD COLUMN comission_value   DECIMAL(12,2) NULL,
+  ADD COLUMN commission_amount DECIMAL(12,2) NULL COMMENT 'commission for this line, on face value';
+
+  ALTER TABLE voucher_orders
+  ADD COLUMN pg_fee DECIMAL(12,2) NOT NULL DEFAULT 0;
+
+  CREATE TABLE voucher_purchase_ledger (
+  id                    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  AgencyID              BIGINT UNSIGNED NULL,
+  store_id              BIGINT UNSIGNED NOT NULL,
+  voucher_id            BIGINT UNSIGNED NOT NULL,
+  voucher_order_id      BIGINT UNSIGNED NOT NULL,
+  voucher_order_item_id BIGINT UNSIGNED NOT NULL,
+  order_no              VARCHAR(40) NULL,
+  voucher_name          VARCHAR(190) NULL,
+  customer_id           BIGINT UNSIGNED NULL,
+  quantity              INT NOT NULL DEFAULT 1,
+  face_value            DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT 'voucher_price x quantity',
+  customer_discount     DECIMAL(12,2) NOT NULL DEFAULT 0,
+  customer_paid         DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT 'face_value - customer_discount (tax excluded)',
+  discount_source       TINYINT NOT NULL DEFAULT 0 COMMENT '0 admin funded, 1 store funded',
+  store_discount        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  admin_discount        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  commission_type       TINYINT NULL,
+  commission_value      DECIMAL(12,2) NULL,
+  commission_amount     DECIMAL(12,2) NOT NULL DEFAULT 0,
+  pg_fee                DECIMAL(12,2) NOT NULL DEFAULT 0,
+  store_payable         DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT 'face_value - store_discount - commission_amount - pg_fee',
+  paid_at               DATETIME NOT NULL,
+  status                VARCHAR(20) NOT NULL DEFAULT 'posted' COMMENT 'posted | settled | reversed',
+  settlement_id         BIGINT UNSIGNED NULL,
+  settled_at            DATETIME NULL,
+  created_at            TIMESTAMP NULL,
+  updated_at            TIMESTAMP NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_vpl_item (voucher_order_item_id),
+  KEY idx_vpl_pick (store_id, AgencyID, status, settlement_id, paid_at),
+  KEY idx_vpl_order (voucher_order_id),
+  KEY idx_vpl_settlement (settlement_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE store_settlement
+  ADD COLUMN voucher_count      INT NOT NULL DEFAULT 0,
+  ADD COLUMN voucher_payable    DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT 'net of the voucher items (signed)',
+  ADD COLUMN voucher_commission DECIMAL(12,2) NOT NULL DEFAULT 0;
+
+  ALTER TABLE store_settlement_items
+  ADD COLUMN ref_no      VARCHAR(60) NULL,
+  ADD COLUMN txn_date    DATETIME NULL,
+  ADD COLUMN description VARCHAR(190) NULL;
+
+  ALTER TABLE `voucher_order_items`
+ADD COLUMN `pg_fee` DECIMAL(12,2) NOT NULL DEFAULT 0.00
+AFTER `commission_amount`;
