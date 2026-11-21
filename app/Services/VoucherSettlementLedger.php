@@ -53,19 +53,19 @@ class VoucherSettlementLedger
         return self::round2(bcdiv(bcmul(self::dec($lineFace), $value, 6), '100', 6));
     }
 
-    /** Platform fee of one order line (percentage of face value), only when the store is the payer. */
-    public static function pgFeeFor($store, $lineFace): string
+    /** Platform fee of one order line: platform_fee % of what the customer paid (face - discount), only when the store is the payer. */
+    public static function pgFeeFor($store, $customerPaid): string
     {
         if (! $store || strtolower((string) $store->platform_fee_payer) !== 'store') {
             return '0.00';
         }
 
         $pct = self::dec($store->platform_fee ?? 0);
-        if (bccomp($pct, '0', 2) <= 0) {
+        if (bccomp($pct, '0', 2) <= 0 || bccomp(self::dec($customerPaid), '0', 2) <= 0) {
             return '0.00';
         }
 
-        return self::round2(bcdiv(bcmul(self::dec($lineFace), $pct, 6), '100', 6));
+        return self::round2(bcdiv(bcmul(self::dec($customerPaid), $pct, 6), '100', 6));
     }
 
     /** Pure calculation of one ledger line. */

@@ -431,7 +431,7 @@ class WebhookController extends Controller
                         Storage::disk('public')->put('logs/Webhook/voucher/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
                         // pr($bookingProcess);
                         // die;
-                        $URL = $this->API_URL . 'voucher/voucher-purchase';
+                        $URL = $this->API_URL . '/api/voucher/voucher-purchase';
                         $response = HttpRequest($URL, $bookingProcess, $AgencyID, $newPlain);
                         $resultSet = json_decode($response, 1);
                         Storage::disk('public')->put('logs/Webhook/voucher/' . $BookingID . '/' . $currentDate . '_redeemResponse.json', json_encode($resultSet));

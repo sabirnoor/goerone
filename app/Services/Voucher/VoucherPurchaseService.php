@@ -10,6 +10,7 @@ use App\Models\VoucherCartItem;
 use App\Models\VoucherOrder;
 use App\Models\VoucherPayment;
 use App\Models\Vouchers;
+use App\Services\StoreSettlementService;
 use App\Services\Voucher\Gateways\VoucherPaymentGateway;
 use App\Services\VoucherSettlementLedger;
 use Illuminate\Support\Facades\DB;
@@ -327,18 +328,32 @@ class VoucherPurchaseService
     }
 
     /** Stamp the store-borne platform fee on each item and the order total (percentage of face value). */
-    private function applyPgFee(VoucherOrder $order): void
+   private function applyPgFee(VoucherOrder $order): void
     {
         $order->loadMissing('items.voucher.store');
 
         $total = '0.00';
+
         foreach ($order->items as $item) {
-            $pg = VoucherSettlementLedger::pgFeeFor($item->voucher?->store, $item->line_total);
+            $store = $item->voucher?->store;
+
+            if (! $store || strtolower((string) $store->platform_fee_payer) !== 'store') {
+                continue;
+            }
+
+            // what the customer actually paid for this line (tax excluded)
+            $customerPaid = bcsub(
+                StoreSettlementService::dec($item->line_total),
+                StoreSettlementService::dec($item->customer_discount),
+                2
+            );
+
+            $pg = VoucherSettlementLedger::pgFeeFor($store, $customerPaid);
 
             if (bccomp($pg, '0', 2) > 0) {
                 $item->update(['pg_fee' => $pg]);
+                $total = bcadd($total, $pg, 2);
             }
-            $total = bcadd($total, $pg, 2);
         }
 
         $order->update(['pg_fee' => $total]);
