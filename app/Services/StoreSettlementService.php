@@ -7,6 +7,7 @@ use App\Models\LoyaltyRedemption;
 use App\Models\Store;
 use App\Models\StoreSettlementItem;
 use App\Models\StoreSettlementPayment;
+use App\Models\VoucherPurchaseLedger;
 use App\Models\StoreSettlements;
 use App\Models\WalletModel;
 use Carbon\Carbon;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Store settlement - REDEMPTIONS ONLY (vouchers to be added later).
+ * Store settlement - redemptions AND voucher purchases (voucher side: see VoucherSettlementLedger).
  *
  * Sign convention for every amount (store's point of view):
  *   +  GoerOne owes the store   (online / wallet redemptions)
@@ -124,10 +125,11 @@ class StoreSettlementService
 
     /**
      * $opts (all optional, intended for targeted test runs on ONE store):
-     *   from        Y-m-d  only redemptions on/after this date
-     *   to          Y-m-d  only redemptions on/before this date
+     *   from        Y-m-d  only transactions on/after this date
+     *   to          Y-m-d  only transactions on/before this date
      *   ignore_due  bool   TESTING ONLY: skip the due-days rule (also picks up not-yet-due transactions)
-     * Without $opts the normal rule applies: redemption_date + settlement_day <= today (IST).
+     * Without $opts the normal rule applies: transaction date + settlement_day <= today (IST).
+     * Transactions = redemptions (redemption_date) + paid voucher purchases (paid_at).
      */
     public function generateForStore(Store $store, bool $preview = false, array $opts = []): ?array
     {
@@ -145,61 +147,90 @@ class StoreSettlementService
         // upper date bound: due-days cutoff, tightened by "to"; with ignore_due only "to" (if any) applies
         $upper   = $ignoreDue ? $to : ($to ? min($to, $cutoff) : $cutoff);
 
-        $eligible = fn() => LoyaltyRedemption::where('stores_id', $store->id)
+        $eligibleRedemptions = fn() => LoyaltyRedemption::where('stores_id', $store->id)
             ->where('AgencyID', $store->AgencyID)
             ->whereNull('settlement_id')
             ->when($upper, fn($q) => $q->whereDate('redemption_date', '<=', $upper))
             ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from))
             ->orderBy('redemption_id');
 
-        // unsettled rows inside the requested range that are NOT due yet (shown in preview)
-        $notYetDue = fn() => $ignoreDue ? 0 : LoyaltyRedemption::where('stores_id', $store->id)
+        $eligibleVouchers = fn() => VoucherPurchaseLedger::where('store_id', $store->id)
             ->where('AgencyID', $store->AgencyID)
+            ->where('status', 'posted')
             ->whereNull('settlement_id')
-            ->whereDate('redemption_date', '>', $cutoff)
-            ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('redemption_date', '<=', $to))
-            ->count();
+            ->when($upper, fn($q) => $q->whereDate('paid_at', '<=', $upper))
+            ->when($from, fn($q) => $q->whereDate('paid_at', '>=', $from))
+            ->orderBy('id');
+
+        // unsettled transactions inside the requested range that are NOT due yet (shown in preview)
+        $notYetDue = function () use ($store, $cutoff, $from, $to, $ignoreDue) {
+            if ($ignoreDue) {
+                return 0;
+            }
+            $r = LoyaltyRedemption::where('stores_id', $store->id)
+                ->where('AgencyID', $store->AgencyID)
+                ->whereNull('settlement_id')
+                ->whereDate('redemption_date', '>', $cutoff)
+                ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from))
+                ->when($to, fn($q) => $q->whereDate('redemption_date', '<=', $to))
+                ->count();
+            $v = VoucherPurchaseLedger::where('store_id', $store->id)
+                ->where('AgencyID', $store->AgencyID)
+                ->where('status', 'posted')
+                ->whereNull('settlement_id')
+                ->whereDate('paid_at', '>', $cutoff)
+                ->when($from, fn($q) => $q->whereDate('paid_at', '>=', $from))
+                ->when($to, fn($q) => $q->whereDate('paid_at', '<=', $to))
+                ->count();
+            return $r + $v;
+        };
 
         if ($preview) {
-            $rows = $eligible()->get();
-            if ($rows->isEmpty()) {
+            $reds     = $eligibleRedemptions()->get();
+            $vouchers = $eligibleVouchers()->get();
+            if ($reds->isEmpty() && $vouchers->isEmpty()) {
                 return $targeted
-                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible redemptions in this range (' . $notYetDue() . ' not yet due)']
+                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible transactions in this range (' . $notYetDue() . ' not yet due)']
                     : null;
             }
-            $calc = $this->summarise($rows, $dueDays);
+            $calc = $this->summarise($reds, $vouchers, $dueDays);
             return ['store_id' => $store->id, 'store_name' => $store->store_name, 'preview' => true, 'not_yet_due_count' => $notYetDue()]
                 + $calc['totals'] + ['items' => $calc['items']];
         }
 
-        return DB::transaction(function () use ($store, $eligible, $dueDays, $targeted) {
+        return DB::transaction(function () use ($store, $eligibleRedemptions, $eligibleVouchers, $dueDays, $targeted) {
             // Serialise generation per store, then lock the candidate rows
             Store::whereKey($store->id)->lockForUpdate()->first();
-            $rows = $eligible()->lockForUpdate()->get();
+            $reds     = $eligibleRedemptions()->lockForUpdate()->get();
+            $vouchers = $eligibleVouchers()->lockForUpdate()->get();
 
-            if ($rows->isEmpty()) {
+            if ($reds->isEmpty() && $vouchers->isEmpty()) {
                 return $targeted
-                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible redemptions in this range']
+                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible transactions in this range']
                     : null;
             }
 
-            $calc   = $this->summarise($rows, $dueDays);
+            $calc   = $this->summarise($reds, $vouchers, $dueDays);
             $totals = $calc['totals'];
             $net    = $totals['net_amount'];
             $isZero = bccomp($net, '0', 2) === 0;
+
+            $dates = collect($calc['items'])->pluck('txn_date')->map(fn($d) => Carbon::parse($d)->toDateString());
 
             $settlement = StoreSettlements::create([
                 'store_id'               => $store->id,
                 'AgencyID'               => $store->AgencyID,
                 'customer_id'            => $store->UserSysId,
                 'settlement_no'          => 'STL' . date('YmdHis') . str_pad((string) $store->id, 5, '0', STR_PAD_LEFT),
-                'from_date'              => $rows->min('redemption_date'),
-                'to_date'                => $rows->max('redemption_date'),
+                'from_date'              => $dates->min(),
+                'to_date'                => $dates->max(),
                 'total_sales'            => $totals['total_sales'],
                 'total_discount'         => $totals['total_commission'],
                 'payable_amount'         => ltrim($net, '-'),
-                'redem_count'            => $rows->count(),
+                'redem_count'            => $totals['redemption_count'],
+                'voucher_count'          => $totals['voucher_count'],
+                'voucher_payable'        => $totals['voucher_payable'],
+                'voucher_commission'     => $totals['voucher_commission'],
                 'status'                 => $isZero ? 'paid' : 'pending',
                 'settled_at'             => $isZero ? now() : null,
                 'calc_version'           => self::CALC_VERSION,
@@ -220,8 +251,8 @@ class StoreSettlementService
                 $itemRows[] = [
                     'settlement_id'    => $settlement->id,
                     'redemption_id'    => $it['redemption_id'],
-                    'item_type'        => 'redemption',
-                    'source_id'        => $it['redemption_id'],
+                    'item_type'        => $it['item_type'],
+                    'source_id'        => $it['source_id'],
                     'entry_kind'       => 'original',
                     'amount'           => $it['amount'],
                     'side'             => $it['side'],
@@ -231,6 +262,9 @@ class StoreSettlementService
                     'goerone_discount' => $it['goerone_discount'],
                     'commission'       => $it['commission'],
                     'pg_fee'           => $it['pg_fee'],
+                    'ref_no'           => $it['ref_no'],
+                    'txn_date'         => $it['txn_date'],
+                    'description'      => $it['description'],
                     'eligible_on'      => $it['eligible_on'],
                     'created_at'       => $now,
                     'updated_at'       => $now,
@@ -240,15 +274,26 @@ class StoreSettlementService
                 StoreSettlementItem::insert($chunk); // unique index uq_ssi_source blocks duplicates
             }
 
-            // Link redemptions; guard + verify so nothing is ever linked to two settlements
+            // Link sources; guard + verify so nothing is ever linked to two settlements
             $linked = 0;
-            foreach (array_chunk($rows->pluck('redemption_id')->all(), 1000) as $ids) {
+            foreach (array_chunk($reds->pluck('redemption_id')->all(), 1000) as $ids) {
                 $linked += LoyaltyRedemption::whereIn('redemption_id', $ids)
                     ->whereNull('settlement_id')
                     ->update(['settlement_id' => $settlement->id]);
             }
-            if ($linked !== $rows->count()) {
+            if ($linked !== $reds->count()) {
                 throw new \RuntimeException('Redemption link mismatch; settlement rolled back.');
+            }
+
+            $vLinked = 0;
+            foreach (array_chunk($vouchers->pluck('id')->all(), 1000) as $ids) {
+                $vLinked += VoucherPurchaseLedger::whereIn('id', $ids)
+                    ->where('status', 'posted')
+                    ->whereNull('settlement_id')
+                    ->update(['settlement_id' => $settlement->id]);
+            }
+            if ($vLinked !== $vouchers->count()) {
+                throw new \RuntimeException('Voucher link mismatch; settlement rolled back.');
             }
 
             if ($isZero) {
@@ -259,20 +304,18 @@ class StoreSettlementService
         });
     }
 
-    private function summarise(Collection $rows, int $dueDays): array
+    private function summarise(Collection $redemptions, Collection $vouchers, int $dueDays): array
     {
         $items = [];
         $t = [
             'payable_to_store' => '0.00', 'receivable_from_store' => '0.00', 'net_amount' => '0.00',
             'total_sales' => '0.00', 'total_commission' => '0.00', 'total_pg_fee' => '0.00',
-            'total_store_discount' => '0.00', 'total_goerone_discount' => '0.00', 'count' => 0,
+            'total_store_discount' => '0.00', 'total_goerone_discount' => '0.00',
+            'voucher_payable' => '0.00', 'voucher_commission' => '0.00',
+            'redemption_count' => 0, 'voucher_count' => 0, 'count' => 0,
         ];
 
-        foreach ($rows as $r) {
-            $c = self::calculateRedemption($r);
-            $c['redemption_id'] = $r->redemption_id;
-            $c['redemption_date'] = Carbon::parse($r->redemption_date)->toDateString();
-            $c['eligible_on']   = Carbon::parse($r->redemption_date)->startOfDay()->addDays($dueDays)->toDateString();
+        $push = function (array $c) use (&$items, &$t) {
             $items[] = $c;
 
             if ($c['side'] === 'payable') {
@@ -280,13 +323,52 @@ class StoreSettlementService
             } else {
                 $t['receivable_from_store'] = bcadd($t['receivable_from_store'], ltrim($c['amount'], '-'), 2);
             }
-            $t['net_amount']              = bcadd($t['net_amount'], $c['amount'], 2);
-            $t['total_sales']             = bcadd($t['total_sales'], $c['order_amount'], 2);
-            $t['total_commission']        = bcadd($t['total_commission'], $c['commission'], 2);
-            $t['total_pg_fee']            = bcadd($t['total_pg_fee'], $c['pg_fee'], 2);
-            $t['total_store_discount']    = bcadd($t['total_store_discount'], $c['store_discount'], 2);
-            $t['total_goerone_discount']  = bcadd($t['total_goerone_discount'], $c['goerone_discount'], 2);
+            $t['net_amount']             = bcadd($t['net_amount'], $c['amount'], 2);
+            $t['total_sales']            = bcadd($t['total_sales'], $c['order_amount'], 2);
+            $t['total_commission']       = bcadd($t['total_commission'], $c['commission'], 2);
+            $t['total_pg_fee']           = bcadd($t['total_pg_fee'], $c['pg_fee'], 2);
+            $t['total_store_discount']   = bcadd($t['total_store_discount'], $c['store_discount'], 2);
+            $t['total_goerone_discount'] = bcadd($t['total_goerone_discount'], $c['goerone_discount'], 2);
             $t['count']++;
+        };
+
+        foreach ($redemptions as $r) {
+            $c = self::calculateRedemption($r);
+            $c += [
+                'item_type'     => 'redemption',
+                'source_id'     => $r->redemption_id,
+                'redemption_id' => $r->redemption_id,
+                'ref_no'        => $r->referneceNo ?? null,
+                'txn_date'      => Carbon::parse($r->redemption_date)->toDateTimeString(),
+                'description'   => null,
+                'eligible_on'   => Carbon::parse($r->redemption_date)->startOfDay()->addDays($dueDays)->toDateString(),
+            ];
+            $push($c);
+            $t['redemption_count']++;
+        }
+
+        foreach ($vouchers as $v) {
+            $amount = self::dec($v->store_payable);
+            $push([
+                'item_type'        => 'voucher_purchase',
+                'source_id'        => $v->id,
+                'redemption_id'    => null,
+                'amount'           => $amount,
+                'side'             => bccomp($amount, '0', 2) >= 0 ? 'payable' : 'receivable',
+                'is_cash'          => null,
+                'order_amount'     => self::dec($v->face_value),
+                'store_discount'   => self::dec($v->store_discount),
+                'goerone_discount' => self::dec($v->admin_discount),
+                'commission'       => self::dec($v->commission_amount),
+                'pg_fee'           => self::dec($v->pg_fee),
+                'ref_no'           => $v->order_no,
+                'txn_date'         => Carbon::parse($v->paid_at)->toDateTimeString(),
+                'description'      => trim(($v->voucher_name ?? 'Voucher') . ' x ' . $v->quantity),
+                'eligible_on'      => Carbon::parse($v->paid_at)->startOfDay()->addDays($dueDays)->toDateString(),
+            ]);
+            $t['voucher_count']++;
+            $t['voucher_payable']    = bcadd($t['voucher_payable'], $amount, 2);
+            $t['voucher_commission'] = bcadd($t['voucher_commission'], self::dec($v->commission_amount), 2);
         }
 
         return ['items' => $items, 'totals' => $t];
@@ -460,6 +542,7 @@ class StoreSettlementService
             }
 
             $unlinked = LoyaltyRedemption::where('settlement_id', $s->id)->update(['settlement_id' => null]);
+            $unlinked += VoucherPurchaseLedger::where('settlement_id', $s->id)->update(['settlement_id' => null]);
             StoreSettlementItem::where('settlement_id', $s->id)->delete();
             $no = $s->settlement_no;
             $s->delete();
@@ -483,5 +566,8 @@ class StoreSettlementService
              WHERE i.settlement_id = ?",
             [$userId, $settlementId]
         );
+
+        VoucherPurchaseLedger::where('settlement_id', $settlementId)
+            ->update(['status' => 'settled', 'settled_at' => now()]);
     }
 }

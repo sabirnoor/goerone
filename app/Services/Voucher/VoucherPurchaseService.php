@@ -11,6 +11,7 @@ use App\Models\VoucherOrder;
 use App\Models\VoucherPayment;
 use App\Models\Vouchers;
 use App\Services\Voucher\Gateways\VoucherPaymentGateway;
+use App\Services\VoucherSettlementLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -104,7 +105,7 @@ class VoucherPurchaseService
                 $discountCustTotal      += round($discountCust * $ci->quantity, 2);
                 $line      = round($v->voucher_price * $ci->quantity, 2);
                 $subtotal += $line;
-                $lines[]   = ['voucher' => $v, 'qty' => $ci->quantity, 'line' => $line];
+                $lines[]   = ['voucher' => $v, 'qty' => $ci->quantity, 'line' => $line, 'discount_cust' => round($discountCust * $ci->quantity, 2)];
             }
 
             $subtotal = round(($subtotal - $discountCustTotal), 2);
@@ -140,6 +141,12 @@ class VoucherPurchaseService
                     'unit_price'       => $v->voucher_price,
                     'quantity'         => $l['qty'],
                     'line_total'       => $l['line'],
+                    // ---- settlement snapshot (used by VoucherSettlementLedger) ----
+                    'customer_discount' => $l['discount_cust'],
+                    'discount_source'   => (int) ($v->discount_source ?? 0),
+                    'comission_type'    => $v->comission_type,
+                    'comission_value'   => $v->comission_value,
+                    'commission_amount' => VoucherSettlementLedger::commissionFor($v, (int) $l['qty'], $l['line']),
                     'voucher_snapshot' => $v->only([
                         'customer_type',
                         'discount_type',
@@ -199,9 +206,9 @@ class VoucherPurchaseService
     /* ------------------------------------------------------------------
      |  GATEWAY RESULT (callback + webhook both land here; idempotent)
      * ------------------------------------------------------------------ */
-    public function handleGatewayResult(array $r): VoucherOrder
+    public function handleGatewayResult(array $r, bool $applyPgFee = false): VoucherOrder
     {
-        return DB::transaction(function () use ($r) {
+        return DB::transaction(function () use ($r,$applyPgFee) {
             $payment = VoucherPayment::where('merchant_txn_id', $r['merchant_txn_id'])->lockForUpdate()->firstOrFail();
             $order   = VoucherOrder::with('items')->lockForUpdate()->findOrFail($payment->voucher_order_id);
 
@@ -253,6 +260,17 @@ class VoucherPurchaseService
             $order->update(['status' => 'paid', 'paid_at' => now(), 'stock_reserved' => true]);
 
             $this->issueVouchers($order);
+
+            if ($applyPgFee) {
+                $this->applyPgFee($order);      // must run before postOrder()
+            }
+
+            try {
+                DB::transaction(fn() => app(VoucherSettlementLedger::class)->postOrder($order));
+            } catch (Throwable $e) {
+                // settlement:vouchers-sync will pick this order up again
+                Log::critical('Voucher settlement ledger post failed', ['order' => $order->order_no, 'error' => $e->getMessage()]);
+            }
 
             VoucherCartItem::where('customer_id', $order->customer_id)
                 ->whereIn('voucher_id', $order->items->pluck('voucher_id'))
@@ -306,6 +324,24 @@ class VoucherPurchaseService
                 ]);
             }
         }
+    }
+
+    /** Stamp the store-borne platform fee on each item and the order total (percentage of face value). */
+    private function applyPgFee(VoucherOrder $order): void
+    {
+        $order->loadMissing('items.voucher.store');
+
+        $total = '0.00';
+        foreach ($order->items as $item) {
+            $pg = VoucherSettlementLedger::pgFeeFor($item->voucher?->store, $item->line_total);
+
+            if (bccomp($pg, '0', 2) > 0) {
+                $item->update(['pg_fee' => $pg]);
+            }
+            $total = bcadd($total, $pg, 2);
+        }
+
+        $order->update(['pg_fee' => $total]);
     }
 
     private function reserveStock(VoucherOrder $order): bool

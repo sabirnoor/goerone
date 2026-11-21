@@ -21,6 +21,9 @@ class StoreSettlementItem extends Model
         'commission',
         'pg_fee',
         'eligible_on',
+        'ref_no',
+        'txn_date',
+        'description',
     ];
 
     protected $casts = [
@@ -31,6 +34,7 @@ class StoreSettlementItem extends Model
         'commission' => 'decimal:2',
         'pg_fee' => 'decimal:2',
         'eligible_on' => 'date',
+        'txn_date' => 'datetime',
     ];
 
     public function settlement()
@@ -38,6 +42,7 @@ class StoreSettlementItem extends Model
         return $this->belongsTo(StoreSettlements::class, 'settlement_id');
     }
 
+    // Only meaningful when item_type = 'redemption' (for voucher items source_id is a ledger id)
     public function redemption()
     {
         return $this->belongsTo(LoyaltyRedemption::class, 'source_id', 'redemption_id');

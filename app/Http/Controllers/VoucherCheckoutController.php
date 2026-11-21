@@ -130,7 +130,7 @@ class VoucherCheckoutController extends Controller
         }
         $order = null;
         try {
-            $order = $this->purchase->handleGatewayResult($this->gateway->parseCallback($request));
+            $order = $this->purchase->handleGatewayResult($this->gateway->parseCallback($request),$request->boolean('pg_fee'));
             return response()->json([
                 'status' => [
                     'success' => true,

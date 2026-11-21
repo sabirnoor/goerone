@@ -20,7 +20,10 @@ class StoreSettlements extends Model
         'total_sales',
         'total_discount',      // v2: total redemption commission
         'payable_amount',      // v2: ABS(net_amount) = amount to be settled
-        'redem_count',
+        'redem_count',          // redemptions in this settlement
+        'voucher_count',        // voucher purchases in this settlement
+        'voucher_payable',      // net of the voucher items (signed)
+        'voucher_commission',
         'status',              // pending | partial | paid
         'settled_by',
         'settled_at',
@@ -47,6 +50,8 @@ class StoreSettlements extends Model
         'receivable_from_store' => 'decimal:2',
         'net_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
+        'voucher_payable' => 'decimal:2',
+        'voucher_commission' => 'decimal:2',
     ];
 
     public function store()
