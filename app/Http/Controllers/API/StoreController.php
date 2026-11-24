@@ -10,6 +10,7 @@ use App\Models\Store;
 use App\Models\StoreImage;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -204,9 +205,25 @@ class StoreController extends Controller
 
     public function createStore(Request $request)
     {
+        $lock = null;
         try {
             if ($request->isMethod('post')) {
                 $storeId = isset($request->id) ? $request->id : "";
+
+                // One save at a time per store/phone. A double click or double Enter would otherwise
+                // send two requests: the first saves, the second fails the unique/duplicate checks and
+                // the user sees an error even though the store was saved.
+                $lock = Cache::lock('store-save:' . $request->user()->id . ':' . ($storeId ?: $request->phone), 30);
+                if (!$lock->get()) {
+                    $lock = null; // not ours, do not release it in finally
+                    return response()->json([
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 429,
+                        ],
+                        'message' => 'Your previous save is still in progress. Please wait a moment.',
+                    ]);
+                }
                 $sharedRules = [
                     'store_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                     'vendor_category' => 'nullable|string|max:255',
@@ -509,6 +526,9 @@ class StoreController extends Controller
                 if ($request->password) {
                     $storeData['password'] =  Hash::make($request->password);
                 }
+                // Everything below writes to the DB (user + store + qr handle + gallery rows): all or nothing,
+                // so a failure can never leave a user row behind without its store.
+                DB::beginTransaction();
                 $request->merge($userRegister);
                 $authController = app(AuthController::class);
                 $response = $authController->register($request);
@@ -521,6 +541,7 @@ class StoreController extends Controller
                 }
 
                 if ($status != 1 && empty($storeId)) {
+                    DB::rollBack();
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -537,6 +558,7 @@ class StoreController extends Controller
                     $AgencyID = $isAgency  ? $user->id : $user->AgencyID;
                     $UserSysId = $isAgency ? $user->id : $user->AgencyID;
                     if (!$existingStore) {
+                        DB::rollBack();
                         return response()->json([
                             'status' => [
                                 'success' => false,
@@ -550,6 +572,7 @@ class StoreController extends Controller
                         : ($existingStore->UserSysId == $user->id || $existingStore->id == $user->id);
 
                     if (!$isOwner) {
+                        DB::rollBack();
                         return response()->json([
                             'status' => ['success' => false, 'httpStatus' => 403],
                             'message' => 'You are not authorized to update this store.',
@@ -601,6 +624,7 @@ class StoreController extends Controller
                 }
 
                 if ($store) {
+                    DB::commit();
                     return response()->json([
                         'status' => [
                             'success' => true,
@@ -610,6 +634,7 @@ class StoreController extends Controller
                         'result' => $store,
                     ]);
                 } else {
+                    DB::rollBack();
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -620,6 +645,9 @@ class StoreController extends Controller
                 }
             }
         } catch (\Throwable $th) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
             return response()->json([
                 'status' => [
                     'success' => false,
@@ -627,6 +655,10 @@ class StoreController extends Controller
                 ],
                 'message' => $th->getMessage(),
             ]);
+        } finally {
+            if ($lock) {
+                $lock->release();
+            }
         }
     }
 
