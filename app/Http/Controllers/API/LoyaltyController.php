@@ -759,9 +759,8 @@ class LoyaltyController extends Controller
                         ->when($mep == 1, function ($query) use ($membershipId) {
                             $query->where('loyalty_card.program_id', $membershipId);
                         })->first();
-                    $max_coin_usage_percent = ($UserCard->program->max_coin_usage_percent ?? 0);
-                    $coinPercent = ($max_coin_usage_percent === null || $max_coin_usage_percent === '') ? 100
-                    : min(100, max(0, (float) $max_coin_usage_percent));
+                    // $max_coin_usage_percent = ($UserCard->program->max_coin_usage_percent ?? 0);
+                    $coinPercent = min(100, max(0, (float) ($UserCard->program->max_coin_usage_percent ?? 0)));
 
                     if ($usereward == 1) {
                         $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
