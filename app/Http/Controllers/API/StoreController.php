@@ -1152,6 +1152,7 @@ class StoreController extends Controller
         return User::select('users.id','users.name','users.mobile', 'users.email', 'users.UserType')
             ->where('users.active', 1)
             ->where('users.UserType', 4)
+            ->where('users.GoerOne', 1)
             ->where(function ($query) use ($user) {
                 if ($user->UserType == 1) {
                     $query->where('users.AgencyID', $user->id);

@@ -760,15 +760,20 @@ class LoyaltyController extends Controller
                             $query->where('loyalty_card.program_id', $membershipId);
                         })->first();
                     $max_coin_usage_percent = ($UserCard->program->max_coin_usage_percent ?? 0);
+                    $coinPercent = ($max_coin_usage_percent === null || $max_coin_usage_percent === '') ? 100
+                    : min(100, max(0, (float) $max_coin_usage_percent));
 
                     if ($usereward == 1) {
                         $RewardSummary = $this->rewardService->getRewardSummary($user->id, $AgencyID);
-                        $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
+                        $coinBalance   = (float) ($RewardSummary['total_rewardearn'] ?? 0);
+                        $coinCap       = round(($BookingAmount * $coinPercent) / 100, 2);  // % of ORDER, not balance
+                        $points_to_redeem = round(min($coinBalance, $coinCap), 2); 
+                        // $points_to_redeem = isset($RewardSummary['total_rewardearn']) ? $RewardSummary['total_rewardearn'] : 0;
                         if ($points_to_redeem > $BookingAmount) {
                             $points_to_redeem = $BookingAmount;
                         }
-                        $points_to_redeem = (($points_to_redeem * (float)$max_coin_usage_percent) / 100);
-
+                        // $points_to_redeem = (($points_to_redeem * (float)$max_coin_usage_percent) / 100);
+                        if ($points_to_redeem > 0) {
                         $RewardRequest = [
                             "points" => ($points_to_redeem),
                             "description" => 'Used on Loyalty Redeem',
@@ -780,7 +785,7 @@ class LoyaltyController extends Controller
                             "ReferenceNo" => $request->ref,
                             'PlanType' => 10,
                         ];
-
+                        
                         $redemption = $this->rewardService->transferPoints($RewardRequest);
                         $success = $redemption['success'] ?? 0;
                         $message = isset($redemption['message']) ? $redemption['message'] : 0;
@@ -796,6 +801,7 @@ class LoyaltyController extends Controller
                                 ],
                                 'message' => $message,
                             ]);
+                        }
                         }
                     }
                     $redm = [];

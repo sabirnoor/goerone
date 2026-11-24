@@ -8,6 +8,7 @@ use App\Http\Controllers\API\MembershipController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\StoreOnboardingController;
+use App\Http\Controllers\API\StaffController;
 use App\Http\Controllers\API\StoreRegistrationController;
 use App\Http\Controllers\API\VendorMasterController;
 use App\Http\Controllers\VoucherCartController;
@@ -65,6 +66,13 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
     });
 
     Route::post('/get-staff', [StoreController::class, 'getActiveStaffForRM']);
+
+    // GoerOne staff master (UserType 1 is enforced inside the controller)
+    Route::prefix('goerone-staff')->group(function () {
+        Route::post('/', [StaffController::class, 'index']);
+        Route::post('/save', [StaffController::class, 'save']);
+        Route::post('/status', [StaffController::class, 'setStatus']);
+    });
 
     Route::prefix("loyalty")->group(function () {
         Route::post('program', [LoyaltyController::class, 'getLoyaltyProgram']);

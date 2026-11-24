@@ -12,6 +12,7 @@ class LegalPolicy extends Model
     public const TYPES = [
         'privacy_policy'   => 'Privacy Policy',
         'terms_conditions' => 'Terms & Conditions',
+        'contact_us'       => 'Contact Us',
     ];
 
     protected $fillable = [
