@@ -196,6 +196,7 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
     Route::post('/legal/save', [LegalPolicyController::class, 'save']);
 
     Route::post('store-settlements/my-list',      [StoreSettlementController::class, 'storeIndex']); // NEW
+    Route::post('store-settlements/my-due',       [StoreSettlementController::class, 'storeDueTransactions']);
     Route::post('store-settlements/my-show/{id}', [StoreSettlementController::class, 'storeShow'])->whereNumber('id');
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
@@ -286,6 +287,7 @@ Route::middleware('apiKey')->group(function () {
         // fixed paths FIRST, so they can never be read as an {id}
         Route::post('/list',      [StoreSettlementController::class, 'index']);
         Route::post('/summary',   [StoreSettlementController::class, 'summary']);
+        Route::post('/due',       [StoreSettlementController::class, 'dueTransactions']);
         Route::post('/generate',  [StoreSettlementController::class, 'generate']);
         Route::post('/bulk-paid', [StoreSettlementController::class, 'bulkPaid']);
         // id routes after, numeric only

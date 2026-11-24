@@ -84,6 +84,41 @@ class StoreSettlementController extends Controller
         return response()->json($this->summaryFor($base));
     }
 
+    /** Filters shared by the due-transactions endpoints; returns the array, or a validation response */
+    private function dueFilters(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'status' => 'nullable|in:PENDING,FAILED,SUCCESS,NONE',
+            'from' => 'nullable|date_format:Y-m-d',
+            'to' => 'nullable|date_format:Y-m-d',
+            'keyword' => 'nullable|string|max:100',
+        ]);
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        return $request->only(['status', 'from', 'to', 'keyword']);
+    }
+
+    /**
+     * Admin: redemptions that are due for settlement but not settled yet, with their reward_wallet_temp
+     * status (PENDING / FAILED / SUCCESS / NONE = no temp row). Optional store_id.
+     */
+    public function dueTransactions(Request $request)
+    {
+        $filters = $this->dueFilters($request);
+        if (!is_array($filters)) {
+            return $filters;
+        }
+
+        return response()->json($this->settlementService->dueTransactions(
+            $this->agencyId($request->user()),
+            $request->filled('store_id') ? (int) $request->store_id : null,
+            $filters,
+            $this->perPage($request, 25)
+        ));
+    }
+
     /* ---------------- Store panel (read only) ---------------- */
 
     private function storeScope(Request $request)
@@ -116,6 +151,25 @@ class StoreSettlementController extends Controller
     public function storeShow(Request $request, $id)
     {
         return $this->storeScope($request)->with(['items.redemption', 'payments'])->findOrFail($id);
+    }
+
+    /** Store panel (read only): the store's own due transactions with their approval status */
+    public function storeDueTransactions(Request $request)
+    {
+        $user = $request->user();
+        abort_if(!$user || empty($user->id), 403);
+
+        $filters = $this->dueFilters($request);
+        if (!is_array($filters)) {
+            return $filters;
+        }
+
+        return response()->json($this->settlementService->dueTransactions(
+            (int) $user->AgencyID,
+            (int) $user->id,
+            $filters,
+            $this->perPage($request, 20)
+        ));
     }
 
     private function perPage(Request $request, int $default): int

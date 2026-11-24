@@ -36,6 +36,35 @@ class StoreSettlementService
     private const TZ = 'Asia/Kolkata';
     public const CALC_VERSION = 2;
 
+    /** reward_wallet_temp statuses that keep a redemption OUT of settlement until it is approved (SUCCESS) */
+    public const HOLD_STATUSES = ['PENDING', 'FAILED'];
+
+    /** Approval state from the redemption's reward_wallet_temp row (one row, its status gets updated): PENDING / FAILED / SUCCESS; NONE = no temp row */
+    private const TEMP_STATUS_SQL = "CASE
+        WHEN EXISTS (SELECT 1 FROM reward_wallet_temp t WHERE t.redemption_id = redemption.redemption_id AND t.status = 'FAILED') THEN 'FAILED'
+        WHEN EXISTS (SELECT 1 FROM reward_wallet_temp t WHERE t.redemption_id = redemption.redemption_id AND t.status = 'PENDING') THEN 'PENDING'
+        WHEN EXISTS (SELECT 1 FROM reward_wallet_temp t WHERE t.redemption_id = redemption.redemption_id) THEN 'SUCCESS'
+        ELSE 'NONE'
+    END";
+
+    /**
+     * Approval gate for redemption queries.
+     * Eligible (default): the redemption has NO PENDING / FAILED row in reward_wallet_temp, i.e. it has no temp row at all
+     *                     (directly approved / no cashback) or every temp row is SUCCESS.
+     * $held = true: the opposite - redemptions waiting for approval or rejected.
+     */
+    private static function applyApprovalGate($query, bool $held = false)
+    {
+        $method = $held ? 'whereExists' : 'whereNotExists';
+
+        return $query->{$method}(function ($sub) {
+            $sub->select(DB::raw(1))
+                ->from('reward_wallet_temp as rwt')
+                ->whereColumn('rwt.redemption_id', 'redemption.redemption_id')
+                ->whereIn('rwt.status', self::HOLD_STATUSES);
+        });
+    }
+
     /* ------------------------------------------------------------------
      * Money helpers - strings + BCMath only, never floats in arithmetic
      * ------------------------------------------------------------------ */
@@ -150,6 +179,10 @@ class StoreSettlementService
         $eligibleRedemptions = fn() => LoyaltyRedemption::where('stores_id', $store->id)
             ->where('AgencyID', $store->AgencyID)
             ->whereNull('settlement_id')
+            // only completed redemptions are settled (not pending / cancelled / refunded)
+            ->where('status', 'completed')
+            // approval gate: skip redemptions whose reward_wallet_temp row is PENDING / FAILED
+            ->where(fn($q) => self::applyApprovalGate($q))
             ->when($upper, fn($q) => $q->whereDate('redemption_date', '<=', $upper))
             ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from))
             ->orderBy('redemption_id');
@@ -170,6 +203,7 @@ class StoreSettlementService
             $r = LoyaltyRedemption::where('stores_id', $store->id)
                 ->where('AgencyID', $store->AgencyID)
                 ->whereNull('settlement_id')
+                ->where('status', 'completed')
                 ->whereDate('redemption_date', '>', $cutoff)
                 ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from))
                 ->when($to, fn($q) => $q->whereDate('redemption_date', '<=', $to))
@@ -185,16 +219,27 @@ class StoreSettlementService
             return $r + $v;
         };
 
+        // due-range redemptions that are held back because their reward_wallet_temp row is PENDING / FAILED
+        $onHold = function () use ($store, $upper, $from) {
+            $q = LoyaltyRedemption::where('stores_id', $store->id)
+                ->where('AgencyID', $store->AgencyID)
+                ->whereNull('settlement_id')
+                ->when($upper, fn($q) => $q->whereDate('redemption_date', '<=', $upper))
+                ->when($from, fn($q) => $q->whereDate('redemption_date', '>=', $from));
+
+            return self::applyApprovalGate($q->where('status', 'completed'), true)->count();
+        };
+
         if ($preview) {
             $reds     = $eligibleRedemptions()->get();
             $vouchers = $eligibleVouchers()->get();
             if ($reds->isEmpty() && $vouchers->isEmpty()) {
                 return $targeted
-                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible transactions in this range (' . $notYetDue() . ' not yet due)']
+                    ? ['skipped' => true, 'store_id' => $store->id, 'reason' => 'No eligible transactions in this range (' . $notYetDue() . ' not yet due, ' . $onHold() . ' awaiting approval / rejected)']
                     : null;
             }
             $calc = $this->summarise($reds, $vouchers, $dueDays);
-            return ['store_id' => $store->id, 'store_name' => $store->store_name, 'preview' => true, 'not_yet_due_count' => $notYetDue()]
+            return ['store_id' => $store->id, 'store_name' => $store->store_name, 'preview' => true, 'not_yet_due_count' => $notYetDue(), 'on_hold_count' => $onHold()]
                 + $calc['totals'] + ['items' => $calc['items']];
         }
 
@@ -372,6 +417,76 @@ class StoreSettlementService
         }
 
         return ['items' => $items, 'totals' => $t];
+    }
+
+    /* ------------------------------------------------------------------
+     * DUE TRANSACTIONS
+     * Redemptions whose settlement day has passed but that are not in a settlement yet,
+     * with their reward_wallet_temp approval status (PENDING / FAILED / SUCCESS / NONE).
+     * $agencyId scopes the agency, $storeId (optional) a single store.
+     * $f: status (PENDING|FAILED|SUCCESS|NONE), keyword, from, to (Y-m-d, redemption date)
+     * ------------------------------------------------------------------ */
+    public function dueTransactions(?int $agencyId, ?int $storeId, array $f = [], int $perPage = 25): array
+    {
+        $today     = Carbon::now(self::TZ)->toDateString();
+        $statusSql = self::TEMP_STATUS_SQL;
+
+        $base = function () use ($agencyId, $storeId, $f, $today) {
+            return LoyaltyRedemption::query()
+                ->join('stores', 'stores.id', '=', 'redemption.stores_id')
+                ->whereNull('redemption.settlement_id')
+                // same rule as generation: only completed redemptions can ever settle
+                ->where('redemption.status', 'completed')
+                ->when($agencyId, fn($q) => $q->where('redemption.AgencyID', $agencyId))
+                ->when($storeId, fn($q) => $q->where('redemption.stores_id', $storeId))
+                // same due rule as generation: stores without a settlement_day are never due
+                ->whereNotNull('stores.settlement_day')
+                ->where('stores.settlement_day', '<>', '')
+                ->whereRaw('DATE(redemption.redemption_date) <= DATE_SUB(?, INTERVAL CAST(stores.settlement_day AS UNSIGNED) DAY)', [$today])
+                ->when(!empty($f['from']), fn($q) => $q->whereDate('redemption.redemption_date', '>=', $f['from']))
+                ->when(!empty($f['to']), fn($q) => $q->whereDate('redemption.redemption_date', '<=', $f['to']))
+                ->when(!empty($f['keyword']), function ($q) use ($f) {
+                    $kw = '%' . addcslashes(trim($f['keyword']), '\\%_') . '%';
+                    $q->where(fn($w) => $w->where('redemption.referneceNo', 'like', $kw)->orWhere('stores.store_name', 'like', $kw));
+                });
+        };
+
+        $list = $base()
+            ->select([
+                'redemption.redemption_id',
+                'redemption.referneceNo',
+                'redemption.redemption_date',
+                'redemption.stores_id',
+                'redemption.order_amount',
+                'redemption.discount',
+                'redemption.is_cash',
+                'stores.store_name',
+                'stores.settlement_day',
+            ])
+            ->selectRaw('DATE_ADD(DATE(redemption.redemption_date), INTERVAL CAST(stores.settlement_day AS UNSIGNED) DAY) AS eligible_on')
+            ->selectRaw("({$statusSql}) AS temp_status")
+            ->when(!empty($f['status']), fn($q) => $q->whereRaw("({$statusSql}) = ?", [$f['status']]))
+            ->orderByDesc('redemption.redemption_date')
+            ->orderByDesc('redemption.redemption_id')
+            ->paginate($perPage);
+
+        // counts per status over the whole due set (ignores the status filter, so the cards stay stable)
+        $rows = DB::query()
+            ->fromSub($base()->selectRaw("({$statusSql}) AS temp_status")->addSelect('redemption.order_amount'), 'd')
+            ->selectRaw('d.temp_status, COUNT(*) AS cnt, COALESCE(SUM(d.order_amount), 0) AS amt')
+            ->groupBy('d.temp_status')
+            ->get()
+            ->keyBy('temp_status');
+
+        $summary = [];
+        foreach (['PENDING', 'FAILED', 'SUCCESS', 'NONE'] as $k) {
+            $summary[strtolower($k)] = [
+                'count'  => (int) ($rows[$k]->cnt ?? 0),
+                'amount' => self::dec($rows[$k]->amt ?? 0),
+            ];
+        }
+
+        return ['data' => $list, 'summary' => $summary];
     }
 
     /* ------------------------------------------------------------------

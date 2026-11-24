@@ -31,17 +31,6 @@ class StoreController extends Controller
     public $API_URL;
     protected $otpService;
 
-    // const VENDOR_CATEGORIES = [
-    //     'Dining',
-    //     'Hotels',
-    //     'Shopping',
-    //     'Health',
-    //     'Beauty',
-    //     'Fitness',
-    //     'Travel',
-    //     'Entertainment',
-    // ];
-
     public function __construct()
     {
         $this->APP_NAME = env('APP_NAME');
@@ -100,7 +89,10 @@ class StoreController extends Controller
                 $user = $request->user();
                 // Admin tabs: draft (incomplete) / pending / approved / rejected. Empty or 'all' = no filter.
                 $statusFilter = in_array($request->registration_status, [
-                    Store::STATUS_DRAFT, Store::STATUS_PENDING, Store::STATUS_APPROVED, Store::STATUS_REJECTED,
+                    Store::STATUS_DRAFT,
+                    Store::STATUS_PENDING,
+                    Store::STATUS_APPROVED,
+                    Store::STATUS_REJECTED,
                 ], true) ? $request->registration_status : null;
                 $result = Store::select('stores.*', 'stores.lat as latitude', 'stores.lon as longitude', 'mst_country.name as name', 'static_cities.fullRegionName')
                     ->with(['images', 'relationshipManager:id,name,mobile,countrycode'])
@@ -190,7 +182,7 @@ class StoreController extends Controller
                 'status' => ['success' => true, 'httpStatus' => 200],
                 'message' => 'Success',
                 'data'  => $rows->pluck('name')->values(),
-                'icons' => $rows->filter(fn ($r) => $r->icon)->pluck('icon', 'name'),
+                'icons' => $rows->filter(fn($r) => $r->icon)->pluck('icon', 'name'),
             ]);
         } catch (\Throwable $th) {
             return response()->json([
@@ -206,16 +198,20 @@ class StoreController extends Controller
     public function createStore(Request $request)
     {
         $lock = null;
+
         try {
             if ($request->isMethod('post')) {
                 $storeId = isset($request->id) ? $request->id : "";
 
-                // One save at a time per store/phone. A double click or double Enter would otherwise
-                // send two requests: the first saves, the second fails the unique/duplicate checks and
-                // the user sees an error even though the store was saved.
-                $lock = Cache::lock('store-save:' . $request->user()->id . ':' . ($storeId ?: $request->phone), 30);
+                // Prevent duplicate submissions.
+                $lock = Cache::lock(
+                    'store-save:' . $request->user()->id . ':' . ($storeId ?: $request->phone),
+                    30
+                );
+
                 if (!$lock->get()) {
-                    $lock = null; // not ours, do not release it in finally
+                    $lock = null;
+
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -224,64 +220,101 @@ class StoreController extends Controller
                         'message' => 'Your previous save is still in progress. Please wait a moment.',
                     ]);
                 }
+
                 $sharedRules = [
                     'store_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048',
                     'vendor_category' => 'nullable|string|max:255',
                     'vendor_category_id' => 'nullable|integer|exists:vendor_categories,id',
                     'vendor_type_id' => 'nullable|integer|exists:vendor_types,id',
-                    // (d) up to 5 gallery images, sent as store_images[] in the multipart form
                     'store_images' => 'nullable|array|max:5',
                     'store_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:4096',
-                    // (a) JSON-encoded {day: {is_open, open_time, close_time}} string
                     'store_timings' => 'nullable|string',
-                    // (b) JSON-encoded array of product type strings
                     'product_types' => 'nullable|string',
-                    // (c) at least one of enquiry/payment must be enabled
                     'enquiry_enabled' => 'nullable|boolean',
                     'payment_enabled' => 'nullable|boolean',
                     'is_halal' => 'nullable|boolean',
                     'alcohol_allowed' => 'nullable|boolean',
-                    // Relationship Manager (users.id of the staff member), admin only
                     'relation_manager' => 'nullable|integer|exists:users,id',
                     'food_type' => ['nullable', Rule::in(['veg', 'non_veg', 'both'])],
-                    // platform fee (percentage) – admin only, see below
                     'platform_fee' => 'nullable|numeric|min:0|max:100',
                     'platform_fee_payer' => ['nullable', Rule::in(['store', 'goerone'])],
-                    // GSTIN, optional. e.g. 22AAAAA0000A1Z5
-                    'gst_number' => ['nullable', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/'],
+                    'gst_number' => [
+                        'nullable',
+                        'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/'
+                    ],
                 ];
 
                 if ($request->filled('gst_number')) {
-                    $request->merge(['gst_number' => strtoupper(trim($request->gst_number))]);
+                    $request->merge([
+                        'gst_number' => strtoupper(trim($request->gst_number))
+                    ]);
                 }
 
-                // Bank details — optional and written by the store only (admin just views them).
-                // The form always sends bank_account_number for a store save, so its presence is the signal.
-                // Once an account number is filled, everything except branch becomes mandatory.
-                $hasBankInput = $request->user()->UserType != 1 && $request->has('bank_account_number');
+                // Bank details.
+                $hasBankInput = $request->user()->UserType != 1
+                    && $request->has('bank_account_number');
+
                 $bankAttributes = [];
+
                 if ($hasBankInput) {
                     if ($request->filled('bank_ifsc')) {
-                        $request->merge(['bank_ifsc' => strtoupper(trim($request->bank_ifsc))]);
+                        $request->merge([
+                            'bank_ifsc' => strtoupper(trim($request->bank_ifsc))
+                        ]);
                     }
+
                     $existingCheque = !empty($storeId)
                         ? Store::where('id', $storeId)->value('bank_cancelled_cheque')
                         : null;
 
                     $sharedRules = array_merge($sharedRules, [
-                        'bank_account_number' => ['nullable', 'digits_between:9,18', 'confirmed'],
-                        'bank_account_number_confirmation' => ['required_with:bank_account_number'],
-                        'bank_account_holder_name' => ['required_with:bank_account_number', 'nullable', 'string', 'max:150'],
-                        'bank_ifsc' => ['required_with:bank_account_number', 'nullable', 'regex:/^[A-Z]{4}0[A-Z0-9]{6}$/'],
-                        'bank_name' => ['required_with:bank_account_number', 'nullable', 'string', 'max:150'],
-                        'bank_branch' => ['nullable', 'string', 'max:150'],
-                        'bank_account_type' => ['required_with:bank_account_number', 'nullable', Rule::in(Store::BANK_ACCOUNT_TYPES)],
-                        // required once an account number is given, unless a cheque is already on file
+                        'bank_account_number' => [
+                            'nullable',
+                            'digits_between:9,18',
+                            'confirmed'
+                        ],
+                        'bank_account_number_confirmation' => [
+                            'required_with:bank_account_number'
+                        ],
+                        'bank_account_holder_name' => [
+                            'required_with:bank_account_number',
+                            'nullable',
+                            'string',
+                            'max:150'
+                        ],
+                        'bank_ifsc' => [
+                            'required_with:bank_account_number',
+                            'nullable',
+                            'regex:/^[A-Z]{4}0[A-Z0-9]{6}$/'
+                        ],
+                        'bank_name' => [
+                            'required_with:bank_account_number',
+                            'nullable',
+                            'string',
+                            'max:150'
+                        ],
+                        'bank_branch' => [
+                            'nullable',
+                            'string',
+                            'max:150'
+                        ],
+                        'bank_account_type' => [
+                            'required_with:bank_account_number',
+                            'nullable',
+                            Rule::in(Store::BANK_ACCOUNT_TYPES)
+                        ],
                         'bank_cancelled_cheque' => [
-                            Rule::requiredIf(fn () => $request->filled('bank_account_number') && empty($existingCheque)),
-                            'nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:4096',
+                            Rule::requiredIf(
+                                fn() => $request->filled('bank_account_number')
+                                    && empty($existingCheque)
+                            ),
+                            'nullable',
+                            'file',
+                            'mimes:jpeg,png,jpg,webp,pdf',
+                            'max:4096',
                         ],
                     ]);
+
                     $bankAttributes = [
                         'bank_account_number' => 'account number',
                         'bank_account_number_confirmation' => 'confirm account number',
@@ -294,44 +327,63 @@ class StoreController extends Controller
                     ];
                 }
 
+                // Validation for store update/create.
                 if (!empty($storeId)) {
-                $existingStore = Store::find($storeId);
+                    $existingStore = Store::find($storeId);
 
-                $isStoreUser = $request->user()->UserType != 1;
+                    $isStoreUser = $request->user()->UserType != 1;
 
-                if ($isStoreUser) {
-                    // Store users cannot submit email while updating.
-                    $emailRules = ['prohibited'];
+                    if ($isStoreUser) {
+                        $emailRules = ['prohibited'];
+                    } else {
+                        $emailRules = [
+                            'required',
+                            'string',
+                            'lowercase',
+                            'email',
+                            'max:255',
+                            Rule::unique('stores', 'email')->ignore($storeId, 'id'),
+                        ];
+                    }
+
+                    $validator = Validator::make(
+                        $request->all(),
+                        array_merge($sharedRules, [
+                            'store_name' => 'required|string|max:255',
+                            'phone' => [
+                                'required',
+                                'digits_between:9,12',
+                                Rule::unique('stores', 'phone')->ignore($storeId, 'id'),
+                            ],
+                            'email' => $emailRules,
+                        ])
+                    );
                 } else {
-                    // Admin can update email.
-                    $emailRules = [
-                        'required',
-                        'string',
-                        'lowercase',
-                        'email',
-                        'max:255',
-                        Rule::unique('stores', 'email')->ignore($storeId, 'id'),
-                    ];
+                    $validator = Validator::make(
+                        $request->all(),
+                        array_merge($sharedRules, [
+                            'store_name' => 'required|string|max:255',
+                            'phone' => [
+                                'required',
+                                'digits_between:9,12',
+                                Rule::unique('stores', 'phone')->ignore($storeId, 'id')
+                            ],
+                            'email' => [
+                                'required',
+                                'string',
+                                'lowercase',
+                                'email',
+                                'max:255',
+                                Rule::unique('stores', 'email')->ignore($storeId)
+                            ],
+                        ])
+                    );
                 }
 
-                $validator = Validator::make($request->all(), array_merge($sharedRules, [
-                    'store_name' => 'required|string|max:255',
-                    'phone' => [
-                        'required',
-                        'digits_between:9,12',
-                        Rule::unique('stores', 'phone')->ignore($storeId, 'id'),
-                    ],
-                    'email' => $emailRules,
-                ]));
-            } else {
-                    $validator = Validator::make($request->all(), array_merge($sharedRules, [
-                        'store_name' => 'required|string|max:255',
-                        'phone' => ['required', 'digits_between:9,12', Rule::unique('stores', 'phone')->ignore($storeId, 'id')],
-                        'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('stores', 'email')->ignore($storeId)],
-                    ]));
-                }
-
-                if (!$request->boolean('enquiry_enabled') && !$request->boolean('payment_enabled')) {
+                if (
+                    !$request->boolean('enquiry_enabled')
+                    && !$request->boolean('payment_enabled')
+                ) {
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -348,13 +400,15 @@ class StoreController extends Controller
                 if ($validator->fails()) {
                     $errors = json_encode($validator->messages());
                     $errorArray = [];
+
                     if (json_decode($errors, 1)) {
                         foreach (json_decode($errors, 1) as $err) {
                             foreach ($err as $errs) {
-                                $errorArray[] = ($errs);
+                                $errorArray[] = $errs;
                             }
                         }
                     }
+
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -364,201 +418,324 @@ class StoreController extends Controller
                         'error' => $validator->messages(),
                     ]);
                 }
-                $cleanDate = preg_replace('/GMT[\+\-]\d{4}.*$/', '', $request->event_date);
+
+                // Prepare registration data.
+                $cleanDate = preg_replace(
+                    '/GMT[\+\-]\d{4}.*$/',
+                    '',
+                    $request->event_date
+                );
+
                 $carbonDate = Carbon::parse($cleanDate);
                 $formattedDate = $carbonDate->format('Y-m-d');
+
                 $namesss = explode(' ', $request->contact_name);
+
                 $userRegister = [
                     'agencyName' => $request->store_name,
                     'fname' => isset($namesss[0]) ? $namesss[0] : '',
                     'lname' => isset($namesss[1]) ? $namesss[1] : $namesss[0],
                     'UserType' => 2,
-                    'countrycode'  => isset($request->country_code) ? $request->country_code : 91,
+                    'countrycode' => isset($request->country_code)
+                        ? $request->country_code
+                        : 91,
                     'mobile' => $request->phone,
-                    'email' =>  $request->email,
-                    'password' => !empty($request->password) ? $request->password : 'SGNHA@123229875hgsreg097',
-                    'password_confirmation' => !empty($request->password) ? $request->password : 'SGNHA@123229875hgsreg097',
-
+                    'email' => $request->email,
+                    'password' => !empty($request->password)
+                        ? $request->password
+                        : 'SGNHA@123229875hgsreg097',
+                    'password_confirmation' => !empty($request->password)
+                        ? $request->password
+                        : 'SGNHA@123229875hgsreg097',
                 ];
 
-                // return response()->json([
-                //     'status' => [
-                //         'success' => false,
-                //         'httpStatus' => 201,
-                //     ],
-                //     'message' => $request->all(),
-                //     'formattedDate' => $formattedDate,
-                // ]);
-                $AgencyID = $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID;
-                $userCheck = User::where('AgencyID', $AgencyID)->where('email', $request->email)->where('mobile', $request->phone)->first();
-                if (empty($storeId)) {
-                    if ($userCheck) {
-                        return response()->json([
-                            'status' => [
-                                'success' => false,
-                                'httpStatus' => 201,
-                            ],
-                            'message' => 'The selected email ID and mobile number already exist. Please use a different email address and mobile number.',
-                        ]);
-                    }
-                }
+                // Find existing user by mobile number within the agency.
+                // Email is intentionally not part of this lookup.
+                $AgencyID = $request->user()->UserType == 1
+                    ? $request->user()->id
+                    : $request->user()->AgencyID;
+
+                $userCheck = User::where('AgencyID', $AgencyID)
+                    ->where('mobile', $request->phone)
+                    ->first();
 
                 $storeData = [
-                    'AgencyID' => $request->user()->UserType == 1 ? $request->user()->id : $request->user()->AgencyID,
-                    'store_name'   => $request->store_name,
-                    'store_id'     => $request->store_id,
-                    'settlement_day'   => $request->settlement_day ?? 7,
-                    'email'        => $request->email,
+                    'AgencyID' => $AgencyID,
+                    'store_name' => $request->store_name,
+                    'store_id' => $request->store_id,
+                    'settlement_day' => $request->settlement_day ?? 7,
+                    'email' => $request->email,
                     'contact_name' => $request->contact_name,
-                    'phone'        => $request->phone,
-                    'alt_mobile'   => $request->alt_mobile,
-                    'website_url'  => $request->website_url,
-                    'description'  => $request->description,
-                    'address'      => $request->address,
-                    'country'      => $request->country,
-                    'state'        => $request->state,
-                    'city'         => $request->city,
-                    'type'         => $request->type,
-                    'pincode'         => $request->pincode,
-                    'noOfPass'         => isset($request->noOfPass) ? (int)$request->noOfPass : 0,
-                    'gatenumber'         => isset($request->gatenumber) ? $request->gatenumber : '',
-                    'event_time'         => isset($request->event_time) ? $request->event_time : '',
-                    'entry_time'         => isset($request->entry_time) ? $request->entry_time : '',
-                    'rewardrequired'     => isset($request->rewardrequired) ? (int)$request->rewardrequired : 0,
-                    'swipelimit'         => isset($request->swipelimit) ? (int)$request->swipelimit : 0,
-                    'swipeinyear'        => isset($request->swipeinyear) ? (int)$request->swipeinyear : 0,
-                    'monthlyswipe'       => isset($request->monthlyswipe) ? (int)$request->monthlyswipe : 0,
-                    'OTPAllowed'         => isset($request->OTPAllowed) ? (int)$request->OTPAllowed : 0,
-                    'vendortype'         => isset($request->vendortype) ? (int)$request->vendortype : 0,
-                    'vendor_category'    => isset($request->vendor_category) ? $request->vendor_category : '',
-                    'FaceRecognition'    => isset($request->FaceRecognition) ? (int)$request->FaceRecognition : 0,
-                    'event_date'         => (isset($request->event_date) && !empty($request->event_date)) ? $formattedDate : now(),
-                    'lat'         => isset($request->latitude) ? $request->latitude : '',
-                    'lon'         => isset($request->longitude) ? $request->longitude : '',
-                    'placeId'     => isset($request->placeId) ? $request->placeId : '',
-                    // (a) weekly open/close schedule — unchecked days come through with is_open=false
-                    'store_timings'   => $request->filled('store_timings') ? $request->store_timings : null,
-                    // (b) product types the store deals in
-                    'product_types'   => $request->filled('product_types') ? $request->product_types : null,
-                    // (c) enquiry / payment / both
+                    'phone' => $request->phone,
+                    'alt_mobile' => $request->alt_mobile,
+                    'website_url' => $request->website_url,
+                    'description' => $request->description,
+                    'address' => $request->address,
+                    'country' => $request->country,
+                    'state' => $request->state,
+                    'city' => $request->city,
+                    'type' => $request->type,
+                    'pincode' => $request->pincode,
+                    'noOfPass' => isset($request->noOfPass)
+                        ? (int) $request->noOfPass
+                        : 0,
+                    'gatenumber' => isset($request->gatenumber)
+                        ? $request->gatenumber
+                        : '',
+                    'event_time' => isset($request->event_time)
+                        ? $request->event_time
+                        : '',
+                    'entry_time' => isset($request->entry_time)
+                        ? $request->entry_time
+                        : '',
+                    'rewardrequired' => isset($request->rewardrequired)
+                        ? (int) $request->rewardrequired
+                        : 0,
+                    'swipelimit' => isset($request->swipelimit)
+                        ? (int) $request->swipelimit
+                        : 0,
+                    'swipeinyear' => isset($request->swipeinyear)
+                        ? (int) $request->swipeinyear
+                        : 0,
+                    'monthlyswipe' => isset($request->monthlyswipe)
+                        ? (int) $request->monthlyswipe
+                        : 0,
+                    'OTPAllowed' => isset($request->OTPAllowed)
+                        ? (int) $request->OTPAllowed
+                        : 0,
+                    'vendortype' => isset($request->vendortype)
+                        ? (int) $request->vendortype
+                        : 0,
+                    'vendor_category' => isset($request->vendor_category)
+                        ? $request->vendor_category
+                        : '',
+                    'FaceRecognition' => isset($request->FaceRecognition)
+                        ? (int) $request->FaceRecognition
+                        : 0,
+                    'event_date' => (
+                        isset($request->event_date)
+                        && !empty($request->event_date)
+                    ) ? $formattedDate : now(),
+                    'lat' => isset($request->latitude)
+                        ? $request->latitude
+                        : '',
+                    'lon' => isset($request->longitude)
+                        ? $request->longitude
+                        : '',
+                    'placeId' => isset($request->placeId)
+                        ? $request->placeId
+                        : '',
+                    'store_timings' => $request->filled('store_timings')
+                        ? $request->store_timings
+                        : null,
+                    'product_types' => $request->filled('product_types')
+                        ? $request->product_types
+                        : null,
                     'enquiry_enabled' => $request->boolean('enquiry_enabled'),
                     'payment_enabled' => $request->boolean('payment_enabled'),
-                    'is_halal'        => $request->boolean('is_halal'),
-                    'food_type'       => $request->filled('food_type') ? $request->food_type : null,
+                    'is_halal' => $request->boolean('is_halal'),
+                    'food_type' => $request->filled('food_type')
+                        ? $request->food_type
+                        : null,
                     'alcohol_allowed' => $request->boolean('alcohol_allowed'),
-                    // 'dealtype'         => isset($request->dealtype) ? (int)$request->dealtype : 0,
-                    // 'rewardtype'         => isset($request->rewardtype) ? (int)$request->rewardtype : 0,
-                    // 'dealvalue'         => isset($request->dealvalue) ? (float)$request->dealvalue : 0,
-                    // 'ownervalue'         => isset($request->ownervalue) ? (float)$request->ownervalue : 0,
-                    // 'custvalue'         => isset($request->custvalue) ? (float)$request->custvalue : 0,
-                    // 'ordervalue'         => isset($request->ordervalue) ? (float)$request->ordervalue : 0,
-                    // 'rewardvalue'         => isset($request->rewardvalue) ? (float)$request->rewardvalue : 0,
-                    // 'password'     => !empty($request->password) ? Hash::make($request->password) : Hash::make(Str::random(10)),
-                    'updated_at'   => now(),
+                    'updated_at' => now(),
                 ];
 
-                // Vendor master: validate category/type, then write ids + names (names stay in the old text columns)
-                $current = !empty($storeId) ? Store::find($storeId) : null;
-                $vm = VendorMasterService::resolve($request->vendor_category_id, $request->vendor_type_id, $current);
+                // Vendor master.
+                $current = !empty($storeId)
+                    ? Store::find($storeId)
+                    : null;
+
+                $vm = VendorMasterService::resolve(
+                    $request->vendor_category_id,
+                    $request->vendor_type_id,
+                    $current
+                );
+
                 if ($vm['error']) {
                     return response()->json([
-                        'status' => ['success' => false, 'httpStatus' => 201],
+                        'status' => [
+                            'success' => false,
+                            'httpStatus' => 201
+                        ],
                         'message' => $vm['error'],
                     ]);
                 }
+
                 $storeData = array_merge($storeData, $vm['fields']);
 
-                // GST number: written only when the form sends the key (empty value clears it),
-                // so a client that does not know about it never wipes the stored value.
+                // GST number.
                 if ($request->has('gst_number')) {
-                    $storeData['gst_number'] = $request->filled('gst_number') ? $request->gst_number : null;
+                    $storeData['gst_number'] = $request->filled('gst_number')
+                        ? $request->gst_number
+                        : null;
                 }
 
-                // Platform fee: only admin (agency, UserType == 1) can set or change it.
-                // For store users the keys are left out, so update() keeps the stored values
-                // and create() uses the DB defaults.
+                // Platform fee and relationship manager: admin only.
                 if ($request->user()->UserType == 1) {
-                    $fee = $request->filled('platform_fee') ? (float) $request->platform_fee : 0;
+                    $fee = $request->filled('platform_fee')
+                        ? (float) $request->platform_fee
+                        : 0;
+
                     $storeData['platform_fee'] = $fee;
+
                     $storeData['platform_fee_payer'] = $request->filled('platform_fee_payer')
                         ? $request->platform_fee_payer
                         : 'store';
 
-                    // Relationship Manager: admin only. Empty value clears the assignment.
                     $storeData['relation_manager'] = $request->filled('relation_manager')
                         ? (int) $request->relation_manager
                         : null;
                 }
 
-                // Bank details: only a store save touches them. An admin save leaves the stored values alone.
+                // Bank details.
                 if ($hasBankInput) {
                     $bankFilled = $request->filled('bank_account_number');
-                    // Clearing the account number clears the whole bank block.
-                    $storeData['bank_account_number']      = $bankFilled ? $request->bank_account_number : null;
-                    $storeData['bank_account_holder_name'] = $bankFilled ? trim($request->bank_account_holder_name) : null;
-                    $storeData['bank_ifsc']                = $bankFilled ? $request->bank_ifsc : null;
-                    $storeData['bank_name']                = $bankFilled ? trim($request->bank_name) : null;
-                    $storeData['bank_branch']              = $bankFilled && $request->filled('bank_branch') ? trim($request->bank_branch) : null;
-                    $storeData['bank_account_type']        = $bankFilled ? $request->bank_account_type : null;
+
+                    $storeData['bank_account_number'] = $bankFilled
+                        ? $request->bank_account_number
+                        : null;
+
+                    $storeData['bank_account_holder_name'] = $bankFilled
+                        ? trim($request->bank_account_holder_name)
+                        : null;
+
+                    $storeData['bank_ifsc'] = $bankFilled
+                        ? $request->bank_ifsc
+                        : null;
+
+                    $storeData['bank_name'] = $bankFilled
+                        ? trim($request->bank_name)
+                        : null;
+
+                    $storeData['bank_branch'] = (
+                        $bankFilled && $request->filled('bank_branch')
+                    ) ? trim($request->bank_branch) : null;
+
+                    $storeData['bank_account_type'] = $bankFilled
+                        ? $request->bank_account_type
+                        : null;
 
                     if (!$bankFilled) {
                         $storeData['bank_cancelled_cheque'] = null;
                     } elseif ($request->hasFile('bank_cancelled_cheque')) {
                         $cheque = $request->file('bank_cancelled_cheque');
-                        // extension() is guessed from the file contents, not the client-supplied name
-                        $chequeName = 'cheque_' . time() . '_' . uniqid() . '.' . $cheque->extension();
-                        $cheque->move(public_path('uploads/store/cheques'), $chequeName);
-                        $storeData['bank_cancelled_cheque'] = $this->APP_URL . '/uploads/store/cheques/' . $chequeName;
+
+                        $chequeName = 'cheque_' . time() . '_' . uniqid()
+                            . '.' . $cheque->extension();
+
+                        $cheque->move(
+                            public_path('uploads/store/cheques'),
+                            $chequeName
+                        );
+
+                        $storeData['bank_cancelled_cheque'] =
+                            $this->APP_URL . '/uploads/store/cheques/' . $chequeName;
                     }
-                    // no new file + account number filled => keep the cheque already on file
                 }
 
+                // Store logo.
                 $imagePath = null;
+
                 if ($request->hasFile('store_logo')) {
                     $image = $request->file('store_logo');
-                    $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+
+                    $imageName = time() . '_' . uniqid()
+                        . '.' . $image->getClientOriginalExtension();
+
                     $image->move(public_path('uploads/store'), $imageName);
+
                     $imagePath = 'uploads/store/' . $imageName;
                 }
+
                 if ($imagePath) {
                     $storeData['store_logo'] = $this->APP_URL . '/' . $imagePath;
                 }
+
                 if ($request->password) {
-                    $storeData['password'] =  Hash::make($request->password);
-                }
-                // Everything below writes to the DB (user + store + qr handle + gallery rows): all or nothing,
-                // so a failure can never leave a user row behind without its store.
-                DB::beginTransaction();
-                $request->merge($userRegister);
-                $authController = app(AuthController::class);
-                $response = $authController->register($request);
-                $data = $response->getData(true);
-                $status = isset($data['status']) ? $data['status'] : 0;
-                if ($userCheck) {
-                    $UserData = isset($data['UserData']['id']) ? $data['UserData']['id'] : $userCheck->id;
-                } else {
-                    $UserData = isset($data['UserData']['id']) ? $data['UserData']['id'] : $request->user()->id;
+                    $storeData['password'] = Hash::make($request->password);
                 }
 
-                if ($status != 1 && empty($storeId)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => [
-                            'success' => false,
-                            'httpStatus' => 201,
-                        ],
-                        'message' => isset($data['message']) ? $data['message'] : '',
-                    ]);
+                // Start transaction.
+                DB::beginTransaction();
+
+                /*
+                * USER REGISTRATION LOGIC
+                *
+                * If mobile exists for this agency:
+                *     Reuse existing user ID.
+                *
+                * If mobile does not exist:
+                *     Register the user and use the newly created user ID.
+                */
+                if ($userCheck) {
+                    // Existing user found. Do not call register().
+                    $UserData = $userCheck->id;
+                } else {
+                    // No user found. Register a new user.
+                    $request->merge($userRegister);
+
+                    $authController = app(AuthController::class);
+                    $response = $authController->register($request);
+                    $data = $response->getData(true);
+
+                    $registrationStatus = $data['status'] ?? false;
+
+                    $registrationSucceeded =
+                        $registrationStatus === true
+                        || $registrationStatus === 1
+                        || (
+                            is_array($registrationStatus)
+                            && ($registrationStatus['success'] ?? false) === true
+                        );
+
+                    if (!$registrationSucceeded) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 201,
+                            ],
+                            'message' => $data['message'] ?? 'User registration failed.',
+                        ]);
+                    }
+
+                    $UserData = $data['UserData']['id'] ?? null;
+
+                    if (!$UserData) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 201,
+                            ],
+                            'message' => 'Unable to retrieve registered user ID.',
+                        ]);
+                    }
                 }
+
+                // Update existing store.
                 if ($storeId) {
                     $user = $request->user();
-                    $existingStore = Store::with('images')->find($storeId);
-                    $isAgency = isset($user->UserType) && $user->UserType == 1;
 
-                    $AgencyID = $isAgency  ? $user->id : $user->AgencyID;
-                    $UserSysId = $isAgency ? $user->id : $user->AgencyID;
+                    $existingStore = Store::with('images')->find($storeId);
+
+                    $isAgency = isset($user->UserType)
+                        && $user->UserType == 1;
+
+                    $AgencyID = $isAgency
+                        ? $user->id
+                        : $user->AgencyID;
+
+                    $UserSysId = $isAgency
+                        ? $user->id
+                        : $user->AgencyID;
+
                     if (!$existingStore) {
                         DB::rollBack();
+
                         return response()->json([
                             'status' => [
                                 'success' => false,
@@ -568,54 +745,83 @@ class StoreController extends Controller
                         ], 404);
                     }
 
-                    $isOwner = $user->UserType == 1 ? $existingStore->AgencyID == $user->id
-                        : ($existingStore->UserSysId == $user->id || $existingStore->id == $user->id);
+                    $isOwner = $user->UserType == 1
+                        ? $existingStore->AgencyID == $user->id
+                        : (
+                            $existingStore->UserSysId == $user->id
+                            || $existingStore->id == $user->id
+                        );
 
                     if (!$isOwner) {
                         DB::rollBack();
+
                         return response()->json([
-                            'status' => ['success' => false, 'httpStatus' => 403],
+                            'status' => [
+                                'success' => false,
+                                'httpStatus' => 403
+                            ],
                             'message' => 'You are not authorized to update this store.',
                         ], 403);
                     }
+
                     if (!empty($existingStore->email)) {
                         unset($storeData['email']);
                     }
-                    $storeData['UserSysId'] =  $UserSysId;
-                    $storeData['updated_by_store'] = $isAgency ? null  : $user->id;
+
+                    $storeData['UserSysId'] = $UserSysId;
+                    $storeData['updated_by_store'] = $isAgency
+                        ? null
+                        : $user->id;
+
                     Store::where('id', $storeId)->update($storeData);
+
                     $store = Store::with('images')->find($storeId);
+
                     $message = "Store Updated Successfully!";
                 } else {
-                    $storeData['UserSysId'] =  $UserData;
+                    // Create new store using existing/new user ID.
+                    $storeData['UserSysId'] = $UserData;
                     $storeData['created_at'] = now();
+
                     $insertGetId = Store::insertGetId($storeData);
+
                     $store = Store::find($insertGetId);
+
                     $message = "Store Created Successfully!";
                 }
 
-                // Permanent QR handle: generated once (create) or when a store has none yet (update).
-                // It is never overwritten here, so a handle changed later stays as set.
+                // Permanent QR handle.
                 if ($store && empty($store->qr_handle)) {
                     $handle = Store::makeQrHandle($store->id);
-                    Store::where('id', $store->id)->update(['qr_handle' => $handle]);
+
+                    Store::where('id', $store->id)->update([
+                        'qr_handle' => $handle
+                    ]);
+
                     $store->qr_handle = $handle;
                 }
 
-                // (d) Gallery images — up to 5. New uploads are appended; existing
-                // rows are left alone unless the frontend explicitly asks to remove one
-                // (see removeStoreImage()).
+                // Gallery images.
                 if ($store && $request->hasFile('store_images')) {
                     $existingCount = $store->images()->count();
-                    $incoming = collect($request->file('store_images'))->take(max(0, 5 - $existingCount));
+
+                    $incoming = collect($request->file('store_images'))
+                        ->take(max(0, 5 - $existingCount));
 
                     foreach ($incoming as $index => $galleryImage) {
-                        $galleryImageName = time() . '_' . uniqid() . '.' . $galleryImage->getClientOriginalExtension();
-                        $galleryImage->move(public_path('uploads/store/gallery'), $galleryImageName);
+                        $galleryImageName = time() . '_' . uniqid()
+                            . '.' . $galleryImage->getClientOriginalExtension();
+
+                        $galleryImage->move(
+                            public_path('uploads/store/gallery'),
+                            $galleryImageName
+                        );
 
                         StoreImage::create([
                             'store_id' => $store->id,
-                            'image_path' => $this->APP_URL . '/uploads/store/gallery/' . $galleryImageName,
+                            'image_path' => $this->APP_URL
+                                . '/uploads/store/gallery/'
+                                . $galleryImageName,
                             'sort_order' => $existingCount + $index,
                         ]);
                     }
@@ -625,6 +831,7 @@ class StoreController extends Controller
 
                 if ($store) {
                     DB::commit();
+
                     return response()->json([
                         'status' => [
                             'success' => true,
@@ -635,6 +842,7 @@ class StoreController extends Controller
                     ]);
                 } else {
                     DB::rollBack();
+
                     return response()->json([
                         'status' => [
                             'success' => false,
@@ -648,6 +856,7 @@ class StoreController extends Controller
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
+
             return response()->json([
                 'status' => [
                     'success' => false,
@@ -676,42 +885,44 @@ class StoreController extends Controller
     public function search(Request $request)
     {
         try {
-        $rules = [
-            'lat'      => 'required|numeric|between:-90,90',
-            'lon'      => 'required|numeric|between:-180,180',
-            'radius'   => 'nullable|numeric|min:0.1|max:100',
-            'category' => 'nullable|string|max:191',
-            'limit'    => 'nullable|integer|min:1|max:50',
-            'offset'   => 'nullable|integer|min:0',
-        ];
+            $rules = [
+                'lat'      => 'required|numeric|between:-90,90',
+                'lon'      => 'required|numeric|between:-180,180',
+                'radius'   => 'nullable|numeric|min:0.1|max:100',
+                'category' => 'nullable|string|max:191',
+                'limit'    => 'nullable|integer|min:1|max:50',
+                'offset'   => 'nullable|integer|min:0',
+            ];
 
-        $validator = Validator::make($request->all(), $rules);
+            $validator = Validator::make($request->all(), $rules);
 
-        if ($validator->fails()) {return $this->jsonError( $validator->errors()->first(), 422);}
+            if ($validator->fails()) {
+                return $this->jsonError($validator->errors()->first(), 422);
+            }
 
-        $lat = (float) $request->lat;
-        $lon = (float) $request->lon;
+            $lat = (float) $request->lat;
+            $lon = (float) $request->lon;
 
-        // If radius is not passed, default to 50 KM.
-        $radius = $request->filled('radius') ? (float) $request->radius : 50;
-        $category = trim($request->category ?? '');
-        $limit = (int) ($request->limit ?? 15);
-        $offset = (int) ($request->offset ?? 0);
-        $user = $request->user();
-        $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
+            // If radius is not passed, default to 50 KM.
+            $radius = $request->filled('radius') ? (float) $request->radius : 50;
+            $category = trim($request->category ?? '');
+            $limit = (int) ($request->limit ?? 15);
+            $offset = (int) ($request->offset ?? 0);
+            $user = $request->user();
+            $AgencyID = $user->UserType == 1 ? $user->id : $user->AgencyID;
 
-        $membershipProgramId = null;
+            $membershipProgramId = null;
 
-        if ((int) $user->UserType !== 1) {
-            $membershipProgramId = DB::table('user_card')
-                ->join('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
-                ->where('user_card.user_id', $user->id)
-                ->where('user_card.AgencyID', $AgencyID)
-                ->where('user_card.status', 'active')
-                ->value('loyalty_card.program_id');
-        }
+            if ((int) $user->UserType !== 1) {
+                $membershipProgramId = DB::table('user_card')
+                    ->join('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
+                    ->where('user_card.user_id', $user->id)
+                    ->where('user_card.AgencyID', $AgencyID)
+                    ->where('user_card.status', 'active')
+                    ->value('loyalty_card.program_id');
+            }
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Bounding Box
          * ---------------------------------------------------------
@@ -720,61 +931,63 @@ class StoreController extends Controller
          * The actual radius is still checked using Haversine below.
          */
 
-        $latDelta = $radius / 111.0;
-        $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
-        $lonDelta = $radius / (111.0 * $cosLat);
-        $minLat = max(-90, $lat - $latDelta);
-        $maxLat = min(90, $lat + $latDelta);
-        $minLon = $lon - $lonDelta;
-        $maxLon = $lon + $lonDelta;
+            $latDelta = $radius / 111.0;
+            $cosLat = max(abs(cos(deg2rad($lat))), 0.000001);
+            $lonDelta = $radius / (111.0 * $cosLat);
+            $minLat = max(-90, $lat - $latDelta);
+            $maxLat = min(90, $lat + $latDelta);
+            $minLon = $lon - $lonDelta;
+            $maxLon = $lon + $lonDelta;
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Base Query
          * ---------------------------------------------------------
          */
 
-        $query = Store::query()
-            ->select([
-                'stores.id',
-                'stores.store_name',
-                'stores.store_logo',
-                'stores.address',
-                'stores.description',
-                'stores.vendor_category',
-                'stores.lat',
-                'stores.lon',
-                'stores.placeId',
-                'stores.city',
-                'stores.is_halal',
-                'stores.food_type',
-                'stores.alcohol_allowed',
-            ])
-            ->whereNotNull('stores.lat')
-            ->whereNotNull('stores.lon')
-            ->where('stores.is_active', 1) // inactive stores are never shown in search
-            ->where('stores.registration_status', Store::STATUS_APPROVED) // draft / pending / rejected never shown
-            ->where('stores.AgencyID', $AgencyID)
-            ->whereBetween('stores.lat', [$minLat, $maxLat])
-            ->whereBetween('stores.lon', [$minLon, $maxLon]);
+            $query = Store::query()
+                ->select([
+                    'stores.id',
+                    'stores.store_name',
+                    'stores.store_logo',
+                    'stores.address',
+                    'stores.description',
+                    'stores.vendor_category',
+                    'stores.lat',
+                    'stores.lon',
+                    'stores.placeId',
+                    'stores.city',
+                    'stores.is_halal',
+                    'stores.food_type',
+                    'stores.alcohol_allowed',
+                ])
+                ->whereNotNull('stores.lat')
+                ->whereNotNull('stores.lon')
+                ->where('stores.is_active', 1) // inactive stores are never shown in search
+                ->where('stores.registration_status', Store::STATUS_APPROVED) // draft / pending / rejected never shown
+                ->where('stores.AgencyID', $AgencyID)
+                ->whereBetween('stores.lat', [$minLat, $maxLat])
+                ->whereBetween('stores.lon', [$minLon, $maxLon]);
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Category Filter
          * ---------------------------------------------------------
          */
 
-        if ($category !== '') { $query->where('stores.vendor_category', $category);}
+            if ($category !== '') {
+                $query->where('stores.vendor_category', $category);
+            }
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Exact Haversine Distance
          * ---------------------------------------------------------
          *
          * Distance is returned as distance_km.
          */
-        $query->selectRaw($this->haversineExpression('stores.lat', 'stores.lon'), [$lat, $lon, $lat]);
-         /*
+            $query->selectRaw($this->haversineExpression('stores.lat', 'stores.lon'), [$lat, $lon, $lat]);
+            /*
          * ---------------------------------------------------------
          * Exact Radius Filter
          * ---------------------------------------------------------
@@ -783,8 +996,8 @@ class StoreController extends Controller
          * This ensures stores are actually within
          * the requested radius.
          */
-        $query->having('distance_km', '<=', $radius);
-         /*
+            $query->having('distance_km', '<=', $radius);
+            /*
          * ---------------------------------------------------------
          * Sorting
          * ---------------------------------------------------------
@@ -793,31 +1006,33 @@ class StoreController extends Controller
          * ID provides stable ordering when distances are equal.
          */
 
-        $query->orderBy('distance_km', 'asc')->orderBy('stores.id', 'asc');
-         /*
+            $query->orderBy('distance_km', 'asc')->orderBy('stores.id', 'asc');
+            /*
          * ---------------------------------------------------------
          * Pagination
          * ---------------------------------------------------------
          */
 
-        $rows = $query->offset($offset)->limit($limit + 1)->get();
-        $hasMore = $rows->count() > $limit;
+            $rows = $query->offset($offset)->limit($limit + 1)->get();
+            $hasMore = $rows->count() > $limit;
 
-        if ($hasMore) { $rows = $rows->take($limit);}
+            if ($hasMore) {
+                $rows = $rows->take($limit);
+            }
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Categories
          * ---------------------------------------------------------
          */
 
-        // $categories = collect(self::VENDOR_CATEGORIES)->values();
-        // $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
-        $catRows = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->get(['name', 'icon']);
-        $categories = $catRows->pluck('name')->values();
-        // name => icon url (only categories that have an icon); (object) so an empty map is {} in JSON, not []
-        $categoryIcons = (object) $catRows->filter(fn ($r) => $r->icon)->pluck('icon', 'name')->all();
-        /*
+            // $categories = collect(self::VENDOR_CATEGORIES)->values();
+            // $categories = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->pluck('name')->values();
+            $catRows = VendorCategory::active()->orderBy('sort_order')->orderBy('name')->get(['name', 'icon']);
+            $categories = $catRows->pluck('name')->values();
+            // name => icon url (only categories that have an icon); (object) so an empty map is {} in JSON, not []
+            $categoryIcons = (object) $catRows->filter(fn($r) => $r->icon)->pluck('icon', 'name')->all();
+            /*
         * ---------------------------------------------------------
         * No Stores Found
         * ---------------------------------------------------------
@@ -828,52 +1043,53 @@ class StoreController extends Controller
         * Only show the message on the first page.
         */
 
-        if ($rows->isEmpty() && $offset === 0) {
-            $message = $category !== '' ? self::NO_CATEGORY_MESSAGE : self::NO_SERVICE_MESSAGE;
+            if ($rows->isEmpty() && $offset === 0) {
+                $message = $category !== '' ? self::NO_CATEGORY_MESSAGE : self::NO_SERVICE_MESSAGE;
 
-            return $this->jsonSuccess(
-                $message,
-                [
-                    'items' => [],
-                    'nextOffset' => null,
-                    'radiusKm' => $radius,
-                    'categories' => $categories,
-                    'categoryIcons' => $categoryIcons,
-                ]
-            );
-        }
+                return $this->jsonSuccess(
+                    $message,
+                    [
+                        'items' => [],
+                        'nextOffset' => null,
+                        'radiusKm' => $radius,
+                        'categories' => $categories,
+                        'categoryIcons' => $categoryIcons,
+                    ]
+                );
+            }
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Rewards
          * ---------------------------------------------------------
          */
 
-        $rewardMap = LoyaltyReward::getBestRewardsForStores(
-            $rows->pluck('id')->toArray(),
-            $AgencyID, $membershipProgramId
-        );
+            $rewardMap = LoyaltyReward::getBestRewardsForStores(
+                $rows->pluck('id')->toArray(),
+                $AgencyID,
+                $membershipProgramId
+            );
 
-         /*
+            /*
          * ---------------------------------------------------------
          * Format Stores
          * ---------------------------------------------------------
          */
 
-        $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
+            $items = $rows->map(fn($store) => $this->formatStore($store, false, $rewardMap))->values();
 
-        return $this->jsonSuccess(
-            'Stores fetched successfully.',
-            [
-                'items' => $items,
-                'nextOffset' => $hasMore ? $offset + $limit : null,
-                'radiusKm' => $radius,
-                'categories' => $categories,
-                'categoryIcons' => $categoryIcons,
-            ]
-        );
+            return $this->jsonSuccess(
+                'Stores fetched successfully.',
+                [
+                    'items' => $items,
+                    'nextOffset' => $hasMore ? $offset + $limit : null,
+                    'radiusKm' => $radius,
+                    'categories' => $categories,
+                    'categoryIcons' => $categoryIcons,
+                ]
+            );
         } catch (\Throwable $th) {
-        return $this->jsonError( $th->getMessage() );
+            return $this->jsonError($th->getMessage());
         }
     }
 
@@ -1145,11 +1361,11 @@ class StoreController extends Controller
             return $this->jsonError($th->getMessage());
         }
     }
-    
+
     public function getActiveStaffForRM(Request $request)
     {
         $user = $request->user();
-        return User::select('users.id','users.name','users.mobile', 'users.email', 'users.UserType')
+        return User::select('users.id', 'users.name', 'users.mobile', 'users.email', 'users.UserType')
             ->where('users.active', 1)
             ->where('users.UserType', 4)
             ->where('users.GoerOne', 1)
