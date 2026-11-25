@@ -638,3 +638,6 @@ ALTER TABLE store_settlement
   ALTER TABLE `voucher_order_items`
 ADD COLUMN `pg_fee` DECIMAL(12,2) NOT NULL DEFAULT 0.00
 AFTER `commission_amount`;
+
+ALTER TABLE `store_settlement_payments`
+ADD COLUMN `bank_details` JSON NULL AFTER `direction`;

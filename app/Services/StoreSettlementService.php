@@ -39,6 +39,30 @@ class StoreSettlementService
     /** reward_wallet_temp statuses that keep a redemption OUT of settlement until it is approved (SUCCESS) */
     public const HOLD_STATUSES = ['PENDING', 'FAILED'];
 
+    /**
+     * Snapshot of the store's registered bank account (stores table) saved on each payout,
+     * so the payment record keeps the bank it was paid to even if the store edits it later.
+     * Returns null when the store has no bank details.
+     */
+    private function storeBankSnapshot($storeId): ?array
+    {
+        $store = Store::select([
+            'id', 'bank_name', 'bank_account_number', 'bank_account_holder_name', 'bank_ifsc', 'bank_account_type',
+        ])->find($storeId);
+
+        if (!$store || empty($store->bank_account_number)) {
+            return null;
+        }
+
+        return [
+            'bank_name'      => $store->bank_name,
+            'account_number' => $store->bank_account_number,
+            'holder_name'    => $store->bank_account_holder_name,
+            'ifsc_code'      => $store->bank_ifsc,
+            'account_type'   => $store->bank_account_type,
+        ];
+    }
+
     /** Approval state from the redemption's reward_wallet_temp row (one row, its status gets updated): PENDING / FAILED / SUCCESS; NONE = no temp row */
     private const TEMP_STATUS_SQL = "CASE
         WHEN EXISTS (SELECT 1 FROM reward_wallet_temp t WHERE t.redemption_id = redemption.redemption_id AND t.status = 'FAILED') THEN 'FAILED'
@@ -596,6 +620,8 @@ class StoreSettlementService
                     'remarks'       => $remarks,
                     'payment_date'  => now(),
                     'direction'     => $storePays ? 'store_pays' : 'store_receives',
+                    // payouts to the store carry the store's bank details; wallet debits (store pays GoerOne) have none
+                    'bank_details'  => $storePays ? null : $this->storeBankSnapshot($s->store_id),
                 ]);
 
                 $newPaid = bcadd($paid, $amt, 2);

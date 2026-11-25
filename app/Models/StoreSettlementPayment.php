@@ -16,11 +16,13 @@ class StoreSettlementPayment extends Model
         'remarks',
         'payment_date',
         'direction',
+        'bank_details',
     ];
 
     protected $casts = [
         'payment_date' => 'datetime',
         'amount' => 'decimal:2',
+        'bank_details' => 'array',
     ];
 
     public function settlement()
