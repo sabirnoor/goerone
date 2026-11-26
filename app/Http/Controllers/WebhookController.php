@@ -321,6 +321,7 @@ class WebhookController extends Controller
             $udf2 = isset($payloadData['udf2']) ? $payloadData['udf2'] : '';
             $udf7 = isset($payloadData['udf7']) ? $payloadData['udf7'] : '';
             $udf6 = isset($payloadData['udf6']) ? $payloadData['udf6'] : '';
+            $udf8 = isset($payloadData['udf8']) ? $payloadData['udf8'] : '';
             $status = isset($payloadData['status']) ? $payloadData['status'] : '';
             $txnid = isset($payloadData['txnid']) ? $payloadData['txnid'] : '';
 
@@ -417,6 +418,7 @@ class WebhookController extends Controller
 
                     if ($udf2 == 1 && $Walletstatus == 1) {
                         $bookingProcess['pg_fee'] = true;
+                        $bookingProcess['voucher_code'] = $udf8;
                         Storage::disk('public')->put('logs/Webhook/redeem/' . $BookingID . '/' . $currentDate . '_redeemRequest.json', json_encode($bookingProcess));
                         // pr($bookingProcess);
                         // die;
