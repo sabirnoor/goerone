@@ -17,6 +17,7 @@ use App\Models\mst_currency;
 use App\Models\mst_items;
 use App\Models\mst_markups;
 use App\Models\RewardEarn;
+use App\Models\RewardWallet;
 use App\Models\Store;
 use App\Models\StorePayment;
 use App\Models\StoresMapping;
@@ -246,12 +247,31 @@ class LoyaltyController extends Controller
                         $membership_amount = ($membership_amount - $MemCrAMount);
                     }
 
-                    $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($membership_amount, 18);
-                    $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($membership_amount ?? 0));
+                    // $arrGSTOnAgencyFixMarkUp = $this->calculateServiceTax($membership_amount, 18);
+                    // $TotalAmounts = ($arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] + ($membership_amount ?? 0));
+
+                    // $TotalAmount = $TotalAmounts;
+                    // $SubTotal = $membership_amount ?? 0;
+                    // $DiscountSubTotal = $membership_amount ?? 0;
+                    $gstRate = 18;
+                    $gstType = (int) ($LoyaltyProgram->gst_type ?? 0); // 0 = inclusive, 1 = exclusive
+                    $membership_amount = (float) $membership_amount;
+
+                    if ($gstType === 1) {
+                        // Exclusive: GST is added on top of the membership amount
+                        $gst = $this->calculateServiceTax($membership_amount, $gstRate);
+                        $SubTotal = round($membership_amount, 2);
+                        $TotalTaxAmount = round($gst['serviceTaxAmount'], 2);
+                        $TotalAmounts = round($SubTotal + $TotalTaxAmount, 2);
+                    } else {
+                        // Inclusive: amount is already the payable total, so extract the GST from it
+                        $TotalAmounts = round($membership_amount, 2);
+                        $SubTotal = round($membership_amount / (1 + $gstRate / 100), 2);
+                        $TotalTaxAmount = round($TotalAmounts - $SubTotal, 2);
+                    }
 
                     $TotalAmount = $TotalAmounts;
-                    $SubTotal = $membership_amount ?? 0;
-                    $DiscountSubTotal = $membership_amount ?? 0;
+                    $DiscountSubTotal = $SubTotal;
                     $TotalTaxAmount = $arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] ?? 0;
                     $ItemName = $LoyaltyProgram->program_name ?? 'Membership';
                     $usereward = $request->ur ?? 0;
@@ -1029,14 +1049,15 @@ class LoyaltyController extends Controller
                 'error' => $validator->errors()
             ]);
         }
-
+            $cashPaid = null;
+            $coinsUsed = null;
         try {
+        
             $referneceNo = $request->referneceNo ?? null;
             $checkUserCardExist = LoyaltyUserCard::with('usercard')->select('user_card.*', 'loyalty_card.program_id')
                 ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                 ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.ref', $referneceNo)->where('user_card.user_id', $request->user()->id)
                 ->where('user_card.status', 'active')->first();
-
 
             $ReddemPass = LoyaltyRedemption::where('AgencyID', $AgencyID)->where('referneceNo', $referneceNo)
                 ->where('user_id', $request->user()->id)->first();
@@ -1085,6 +1106,51 @@ class LoyaltyController extends Controller
                 ->where('w.IsCreditPayment', false)
                 ->where('w.is_profit', false)
                 ->first();
+
+            $coinsUsed = round((float) RewardWallet::where('AgencyID', $AgencyID)
+                ->where('payer_id', $user->id)
+                ->where('ReferenceNo', $referneceNo)
+                ->where('type', 'DR')
+                ->where('RewardMode', 'Pay')
+                ->where('status', '!=', 'FAILED')
+                ->sum('points'), 2);
+
+            $cashPaid = round((float) ($walletTransactions->amount ?? 0), 2);
+
+            $membershipSummary = null;
+                
+            if (!empty($checkUserCardExist)) {
+                   $program  = LoyaltyProgram::getMembershipDetails($checkUserCardExist->program_id);
+                   $gstRate  = 18;
+                   $gstType  = (int) ($program->gst_type ?? 0); // 0 = inclusive, 1 = exclusive
+                   $listFee  = round((float) ($program->membership_amount ?? 0), 2);
+
+                   // $cashPaid  = round((float) ($walletTransactions->amount ?? 0), 2);
+                   // coins spent on this purchase (the "Pay" row, not the Welcome row)
+                //    $coinsUsed = (!empty($BalanceDR) && ($BalanceDR['RewardMode'] ?? '') === 'Pay')
+                //        ? round((float) $BalanceDR['points'], 2) : 0;
+
+                   $totalPayable = round($cashPaid + $coinsUsed, 2);                 // incl. GST, after credit, before coins
+                   $taxable      = round($totalPayable / (1 + $gstRate / 100), 2);   // GST-excluded value
+                   $gstAmount    = round($totalPayable - $taxable, 2);
+
+                   // fee after credit: inclusive plans compare on gross, exclusive plans on the pre-GST base
+                   $feeAfterCredit = $gstType === 1 ? $taxable : $totalPayable;
+                   $creditUsed     = max(0, round($listFee - $feeAfterCredit, 2));
+
+                   $membershipSummary = [
+                       'gst_type'      => $gstType,
+                       'gst_rate'      => $gstRate,
+                       'list_fee'      => $listFee,
+                       'credit_used'   => $creditUsed,
+                       'taxable'       => $taxable,
+                       'gst_amount'    => $gstAmount,
+                       'total_payable' => $totalPayable,
+                       'coins_used'    => $coinsUsed,
+                       'cash_paid'     => $cashPaid,
+                   ];
+                }
+
             return response()->json([
                 'status' => [
                     'success' => true,
@@ -1100,6 +1166,9 @@ class LoyaltyController extends Controller
                 'mep' => empty($checkUserCardExist) ? false : true,
                 'UserCard' => $checkUserCardExist,
                 'UsedVoucher' => ($UsedVoucher) ? true : false,
+                'membership_summary' => $membershipSummary,
+                'coins_used' => $coinsUsed,
+                'cash_paid'  => $cashPaid,
                 'VoucherAmount' => ($UsedVoucher->voucher->voucher_price ?? 0),
             ]);
         } catch (\Exception $e) {
