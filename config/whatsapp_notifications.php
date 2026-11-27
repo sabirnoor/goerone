@@ -39,8 +39,7 @@ return [
             ],
         ],
 
-        // Example — replace with your real template(s)
-        'membership_purchased' => [
+        'goerone_membership_purchase' => [
             'source'     => 'membership',
             'recipients' => [
                 'customer' => MembershipPurchasedCustomerMapper::class,

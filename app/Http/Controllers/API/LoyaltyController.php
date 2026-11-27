@@ -109,6 +109,15 @@ class LoyaltyController extends Controller
         });
     }
 
+    private function calculateReverse($intAmount, $percentAgencySTax)
+    {
+        $intAmount = (float) $intAmount;
+        $percentAgencySTax = (float) $percentAgencySTax;
+        $TaxAmount = ($intAmount - ($intAmount * (100 / (100 + $percentAgencySTax))));
+        $NetPrice = ($intAmount - $TaxAmount);
+        return array('NetPrice' => $NetPrice, 'TaxAmount' => $TaxAmount);
+    }
+
     public function redeemReward(Request $request)
     {
         // Keep the authenticated account separate from the customer being charged.
@@ -265,14 +274,16 @@ class LoyaltyController extends Controller
                         $TotalAmounts = round($SubTotal + $TotalTaxAmount, 2);
                     } else {
                         // Inclusive: amount is already the payable total, so extract the GST from it
+                        $rev          = $this->calculateReverse($membership_amount, $gstRate);
+                        $SubTotal     = round($rev['NetPrice'], 2);
                         $TotalAmounts = round($membership_amount, 2);
-                        $SubTotal = round($membership_amount / (1 + $gstRate / 100), 2);
+                        // $SubTotal = round($membership_amount / (1 + $gstRate / 100), 2);
                         $TotalTaxAmount = round($TotalAmounts - $SubTotal, 2);
                     }
 
                     $TotalAmount = $TotalAmounts;
                     $DiscountSubTotal = $SubTotal;
-                    $TotalTaxAmount = $arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] ?? 0;
+                    // $TotalTaxAmount = $arrGSTOnAgencyFixMarkUp['serviceTaxAmount'] ?? 0;
                     $ItemName = $LoyaltyProgram->program_name ?? 'Membership';
                     $usereward = $request->ur ?? 0;
 
@@ -506,6 +517,18 @@ class LoyaltyController extends Controller
                     }
                     DB::commit();
                     if (isset($request->mep) && $request->mep == 1) {
+                    //    Notification for membership purchase
+                    //    GoerOneNotifier::send('membership_purchased', [
+                    //         'customer_id'     => $user->id,
+                    //         'invoice_id'      => $invoice_id,        // <- triggers the PDF attachment
+                    //         'membership_name' => $ItemName,          // builder reads membership_name, not membership
+                    //         'amount'          => $TotalAmount,       // amount actually paid (after coins)
+                    //         'valid_till'      => $twoMonthsLater,
+                    //         'ref'             => $request->ref,
+                    //         'ip'              => $request->ip(),
+                    //         'payment_at'      => Carbon::now()->format('d M Y, h:i A'),
+                    //     ]);
+
                         $checkUserCardExist = LoyaltyUserCard::with('usercard')->select('user_card.*', 'loyalty_card.program_id')
                             ->leftjoin('loyalty_card', 'loyalty_card.card_id', '=', 'user_card.card_id')
                             ->where('user_card.AgencyID', $user->AgencyID)->where('user_card.user_id', $user->id)

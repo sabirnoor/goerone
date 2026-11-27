@@ -22,7 +22,7 @@
         <tr><td style="font-size:14px;color:#333333;line-height:1.6;padding-top:20px;">Hi {{ $customer_name ?? 'there' }},</td></tr>
         <tr><td style="font-size:14px;color:#555555;line-height:1.6;padding-top:12px;padding-bottom:24px;">
             Your <strong style="color:#111111;">{{ $membership_name ?? '' }}</strong> membership is now active.
-            Your invoice is attached to this email for your records.
+            {{-- Your invoice is attached to this email for your records. --}}
         </td></tr>
     </table>
 

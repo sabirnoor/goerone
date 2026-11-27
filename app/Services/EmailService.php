@@ -19,9 +19,10 @@ class EmailService
         $this->billingService = $billingService;
     }
 
-    public function sendEmail(User $user, string $toEmail, string $subject, string $body, string $ipAddress, $newPassword = null, $userUpdate = null)
+    public function sendEmail(User $user, string $toEmail, string $subject, string $body, string $ipAddress, $newPassword = null, $userUpdate = null,array $attachments = [])
     {
-        $emailRequest = new EmailRequest([
+        try {
+            $emailRequest = new EmailRequest([
             'to_email' => $toEmail,
             'subject' => $subject,
             'body' => $body,
@@ -30,7 +31,6 @@ class EmailService
         
         $user->emailRequests()->save($emailRequest);
 
-        try {
             // Charge the user for email
             $this->billingService->chargeUser($user, 'email', 1, $emailRequest);
 
@@ -45,7 +45,7 @@ class EmailService
                 //     $message->to($toEmail)
                 //         ->subject($subject);
                 // });
-                $this->sendViaElasticApi($user, $toEmail, $subject, $body);
+                $this->sendViaElasticApi($user, $toEmail, $subject, $body,$attachments);
                 // Mail::html($body, function ($message) use ($toEmail, $subject, $user) {
                 //     $message->to($toEmail)->from(env('MAIL_FROM_ADDRESS'), $user->name)
                 //         ->subject($subject);
@@ -58,7 +58,9 @@ class EmailService
 
             return $emailRequest;
         } catch (\Exception $e) {
+
             $emailRequest->delete();
+
             return response()->json([
                 'success' => false,
                 'status' => [
@@ -74,7 +76,7 @@ class EmailService
      * Send one email through Elastic Email API v4 using the client's own key.
      * Throws on failure so the existing try/catch in sendEmail() handles it.
      */
-    protected function sendViaElasticApi(User $user, string $toEmail, string $subject, string $html): void
+    protected function sendViaElasticApi(User $user, string $toEmail, string $subject, string $html, array $attachments = []): void
     {
         $emailkey = '';
         if (empty($user->emailkey)) {
@@ -88,6 +90,25 @@ class EmailService
         $fromAddress = 'sabir@ozilconnect.com'; //env('MAIL_FROM_ADDRESS'); // TODO: swap for the client's own verified sender
         $fromName    = str_replace(['<', '>', '"'], '', $user->details->agencyName ?? '');
 
+        $content = [
+                'From'    => "{$fromName} <{$fromAddress}>",
+                'Subject' => $subject,
+                'ReplyTo' => $fromAddress,
+                'Body'    => [[
+                    'ContentType' => 'HTML',
+                    'Content'     => $html,
+                    'Charset'     => 'utf-8',
+                ]],
+            ];
+
+        if ($attachments) {
+        $content['Attachments'] = array_map(fn ($f) => [
+            'BinaryContent' => base64_encode(file_get_contents($f['path'])),
+            'Name'          => $f['name'],
+            'ContentType'   => 'application/pdf',
+        ], $attachments);
+        }
+
         $response = Http::withHeaders([
             'X-ElasticEmail-ApiKey' => $emailkey,
         ])
@@ -97,18 +118,7 @@ class EmailService
                 'Recipients' => [
                     'To' => [$toEmail],
                 ],
-                'Content' => [
-                    'From'    => "{$fromName} <{$fromAddress}>",
-                    'Subject' => $subject,
-                    'ReplyTo' => $fromAddress,
-                    'Body'    => [
-                        [
-                            'ContentType' => 'HTML',
-                            'Content'     => $html,
-                            'Charset'     => 'utf-8',
-                        ],
-                    ],
-                ],
+                'Content'    => $content,
             ]);
 
         if ($response->failed()) {

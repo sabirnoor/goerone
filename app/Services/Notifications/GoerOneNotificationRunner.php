@@ -62,8 +62,7 @@ class GoerOneNotificationRunner
         $files   = $r['attachments'] ?? [];
 
         if ($files) {
-            // ⚠ Adapt to EmailService: needs to accept attachments [['path'=>..., 'name'=>...]]
-            $this->emails->sendEmail($r['user'], $r['email'], $subject, $html, $ctx['ip'] ?? '', $files);
+            $this->emails->sendEmail($r['user'], $r['email'], $subject, $html, $ctx['ip'] ?? '',  attachments: $r['attachments'] ?? []);
         } else {
             $this->emails->sendEmail($r['user'], $r['email'], $subject, $html, $ctx['ip'] ?? '');
         }

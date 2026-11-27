@@ -6,10 +6,15 @@ namespace App\Services\WhatsappNotification\Mappers;
  * EXAMPLE — replace the template name and variables with your approved template.
  *
  * Assumed template body:
- *   Hi {{1}}, your {{2}} membership has been activated for Rs {{3}}.
- *   It is valid till {{4}}. Thank you for choosing GoerOne.
+ * Hello {{1}},
+
+ * Congratulations! Your *{{2}}* membership has been successfully purchased and is now confirmed.
+
+ * Order Reference: *{{3}}*
+
+ * You can now open the GoerOne app to view your membership details and enjoy your benefits.
  *
- * Template name : membership_purchased_customer
+ * Template name : goerone_membership_purchase
  * Language      : en
  * Header        : none
  *
@@ -20,7 +25,7 @@ class MembershipPurchasedCustomerMapper extends BaseWhatsappMapper
 {
     public static function templateName(): string
     {
-        return 'membership_purchased_customer';
+        return 'goerone_membership_purchase';
     }
 
     public static function map(array $data, string $recipientType = 'customer'): array
@@ -28,8 +33,7 @@ class MembershipPurchasedCustomerMapper extends BaseWhatsappMapper
         return static::body(
             static::param($data['customer_name'] ?? null, 'Customer'),
             static::param($data['membership_name'] ?? null),
-            static::param($data['amount'] ?? null, '0'),
-            static::param($data['valid_till'] ?? null),
+            static::param($data['ref'] ?? null, '0'),
         );
     }
 }
