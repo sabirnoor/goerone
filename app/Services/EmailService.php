@@ -22,6 +22,11 @@ class EmailService
     public function sendEmail(User $user, string $toEmail, string $subject, string $body, string $ipAddress, $newPassword = null, $userUpdate = null,array $attachments = [])
     {
         try {
+            Log::info('Email sending process started', [
+            'user_id' => $user->id,
+            'to_email' => $toEmail,
+            'subject' => $subject,
+        ]);
             $emailRequest = new EmailRequest([
             'to_email' => $toEmail,
             'subject' => $subject,
@@ -59,7 +64,19 @@ class EmailService
             return $emailRequest;
         } catch (\Exception $e) {
 
+          Log::error('Email sending failed', [
+            'user_id' => $user->id,
+            'to_email' => $toEmail,
+            'email_request_id' => $emailRequest?->id,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+           if ($emailRequest && $emailRequest->exists) {
             $emailRequest->delete();
+           }
 
             return response()->json([
                 'success' => false,

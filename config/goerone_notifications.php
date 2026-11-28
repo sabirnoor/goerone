@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Notifications\Builders\CashbackApprovedBuilder;
 use App\Services\Notifications\Builders\MembershipPurchasedBuilder;
 use App\Services\Notifications\Builders\StorePaymentBuilder;
 
@@ -41,8 +42,18 @@ return [
             'recipients' => [
                 'customer' => [
                     'mail'     => ['view' => 'emails.membership_purchased_customer', 'subject' => 'Your {membership_name} membership is active - GoerOne'],
-                    // 'whatsapp' => 'goerone_membership_purchase',
+                    'whatsapp' => 'goerone_membership_purchase',
                 ],
+            ],
+        ],
+
+        'cashback_approved' => [
+            'builder'    => CashbackApprovedBuilder::class,
+            'recipients' => [
+                'customer' => [
+                    'mail'     => ['view' => 'emails.cashback_approved_customer', 'subject' => 'Cashback Approved - {store_name}'],
+                    'whatsapp' => 'cashback_approved_customer',
+                    ],
             ],
         ],
     ],

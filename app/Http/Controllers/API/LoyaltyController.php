@@ -1071,9 +1071,7 @@ class LoyaltyController extends Controller
                 // Rule::exists(LoyaltyRedemption::class, 'referneceNo')
                 //     ->where(fn($q) => $q->where('AgencyID', $AgencyID)->where('user_id', $request->user()->id))
             ]
-
         ]);
-
             // GoerOneNotifier::send('membership_purchased', [
             //                 'customer_id'     => 364,
             //                 'invoice_id'      => 1025,        // <- triggers the PDF attachment

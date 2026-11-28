@@ -1,6 +1,6 @@
 <?php
 
-
+use App\Services\WhatsappNotification\Mappers\CashbackApprovedCustomerMapper;
 use App\Services\WhatsappNotification\Mappers\MembershipPurchasedCustomerMapper;
 use App\Services\WhatsappNotification\Mappers\StorePaymentCustomerMapper;
 use App\Services\WhatsappNotification\Mappers\StorePaymentPartnerMapper;
@@ -55,6 +55,12 @@ return [
             'source'     => 'goerone_store_payment_customer',
             'recipients' => [
                 'customer' => StorePaymentCustomerMapper::class,
+            ],
+        ],
+        'cashback_approved_customer' => [
+            'source'     => 'cashback_approved_customer',
+            'recipients' => [
+                'customer' => CashbackApprovedCustomerMapper::class,
             ],
         ],
     ],

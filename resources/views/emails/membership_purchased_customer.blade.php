@@ -1,66 +1,145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
     <title>Membership activated</title>
+    <style>
+        body { margin: 0; padding: 0; }
+        table, td { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; }
+        @media only screen and (max-width: 620px) {
+            .px { padding-left: 22px !important; padding-right: 22px !important; }
+            .hero-amount { font-size: 30px !important; }
+            .h1 { font-size: 22px !important; }
+            .btn a { display: block !important; text-align: center !important; }
+        }
+    </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f6fb;font-family:Arial,sans-serif;">
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#f4f6fb;padding:40px 20px;">
-<tr><td align="center">
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:#ffffff;border-collapse:collapse;border-radius:16px;">
-<tr><td style="padding:40px 30px;">
 
-    <table width="100%" border="0" cellspacing="0" cellpadding="0"><tr>
-        <td align="left" style="padding-bottom:28px;border-bottom:1px solid #e8ecf5;">
-            <img src="{{ asset('goerone_logo.png') }}" alt="GoerOne" height="40" style="display:block;height:40px;width:auto;border:0;">
-        </td>
-    </tr></table>
+<body style="margin:0;padding:0;background-color:#eef2fb;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top:32px;">
-        <tr><td style="font-size:26px;font-weight:800;color:#1d4ed8;line-height:1.25;">Membership Activated</td></tr>
-        <tr><td style="font-size:14px;color:#333333;line-height:1.6;padding-top:20px;">Hi {{ $customer_name ?? 'there' }},</td></tr>
-        <tr><td style="font-size:14px;color:#555555;line-height:1.6;padding-top:12px;padding-bottom:24px;">
-            Your <strong style="color:#111111;">{{ $membership_name ?? '' }}</strong> membership is now active.
-            {{-- Your invoice is attached to this email for your records. --}}
-        </td></tr>
+    {{-- Inbox preview text --}}
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#eef2fb;">
+        Your {{ $membership_name ?? '' }} membership is now active.
+    </div>
+
+    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#eef2fb" style="background-color:#eef2fb;">
+        <tr>
+            <td align="center" style="padding:32px 14px;">
+
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;">
+
+                    {{-- Accent bar --}}
+                    <tr>
+                        <td height="6" style="height:6px;line-height:6px;font-size:0;background-color:#1d4ed8;background-image:linear-gradient(90deg,#1d4ed8,#3b82f6);border-radius:16px 16px 0 0;">&nbsp;</td>
+                    </tr>
+
+                    <tr>
+                        <td bgcolor="#ffffff" class="px" style="background-color:#ffffff;padding:32px 36px 36px;border-left:1px solid #e3e9f7;border-right:1px solid #e3e9f7;border-bottom:1px solid #e3e9f7;border-radius:0 0 16px 16px;">
+
+                            {{-- Logo --}}
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="left" style="padding-bottom:24px;border-bottom:1px solid #edf0f7;">
+                                        <img src="{{ asset('goerone_logo.png') }}" alt="GoerOne" height="40" style="display:block;height:40px;width:auto;border:0;outline:none;text-decoration:none;">
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {{-- Heading --}}
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top:30px;">
+                                <tr>
+                                    <td>
+                                        <table role="presentation" border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td align="center" valign="middle" width="44" height="44" style="width:44px;height:44px;background-color:#e8efff;border-radius:22px;color:#1d4ed8;font-size:22px;font-weight:bold;line-height:44px;">&#10003;</td>
+                                                <td style="padding-left:12px;">
+                                                    <span style="display:inline-block;background-color:#e7f8ee;color:#157347;font-size:11px;font-weight:bold;letter-spacing:0.8px;text-transform:uppercase;padding:5px 12px;border-radius:999px;">Active</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="h1" style="font-size:26px;font-weight:800;color:#0f2a6b;line-height:1.25;padding-top:18px;">
+                                        Membership Activated
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="font-size:15px;color:#1f2937;line-height:1.6;padding-top:18px;">
+                                        Hi {{ $customer_name ?? 'there' }},
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="font-size:15px;color:#4b5563;line-height:1.7;padding-top:10px;padding-bottom:26px;">
+                                        Your <strong style="color:#111827;">{{ $membership_name ?? '' }}</strong> membership is now active. Here is a summary for your records.
+                                        {{-- Your invoice is attached to this email for your records. --}}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {{-- Summary card --}}
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="border:1px solid #dbe4ff;border-radius:12px;border-collapse:separate;background-color:#f7f9ff;">
+                                <tr>
+                                    <td bgcolor="#1d4ed8" style="background-color:#1d4ed8;background-image:linear-gradient(135deg,#1d4ed8,#2f6df0);border-radius:11px 11px 0 0;padding:22px 24px;">
+                                        <div style="font-size:11px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#cfdcff;">Amount paid</div>
+                                        <div class="hero-amount" style="font-size:34px;font-weight:800;color:#ffffff;line-height:1.2;padding-top:6px;">INR {{ $amount ?? '' }}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:6px 24px 8px;">
+                                        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td valign="top" style="padding:14px 0;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;width:42%;">Membership</td>
+                                                <td valign="top" align="right" style="padding:14px 0;font-size:14px;font-weight:bold;color:#111827;line-height:1.5;">{{ $membership_name ?? '' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td valign="top" style="border-top:1px solid #e1e8fb;padding:14px 0;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;width:42%;">Valid till</td>
+                                                <td valign="top" align="right" style="border-top:1px solid #e1e8fb;padding:14px 0;font-size:14px;font-weight:bold;color:#111827;line-height:1.5;">{{ $valid_till ?? '' }}</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {{-- Sign-off --}}
+                            <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top:34px;">
+                                <tr>
+                                    <td style="font-size:14px;color:#4b5563;line-height:1.7;">
+                                        Thank you for choosing GoerOne.<br><br>
+                                        Warm regards,<br>
+                                        <strong style="color:#0f2a6b;">Team GoerOne</strong>
+                                    </td>
+                                </tr>
+                            </table>
+
+                        </td>
+                    </tr>
+                </table>
+
+                {{-- Footer --}}
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;">
+                    <tr>
+                        <td align="center" style="font-size:12px;color:#8a94a8;line-height:1.6;padding:22px 24px 0;">
+                            <strong style="color:#6b7690;">Note:</strong> This is an automated message from an unmonitored email address. Please do not reply to this email.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td align="center" style="font-size:12px;color:#a3acbf;line-height:1.6;padding:8px 24px 0;">
+                            &copy; {{ date('Y') }} GoerOne. All rights reserved.
+                        </td>
+                    </tr>
+                </table>
+
+            </td>
+        </tr>
     </table>
 
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#f4f7ff;border:1px solid #dbe4ff;border-radius:10px;border-collapse:separate;">
-    <tr><td style="padding:20px 22px;">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0">
-            <tr>
-                <td style="font-size:12px;color:#777777;padding-bottom:4px;">Membership</td>
-                <td align="right" style="font-size:14px;font-weight:bold;color:#111111;padding-bottom:4px;">{{ $membership_name ?? '' }}</td>
-            </tr>
-            <tr><td colspan="2" style="border-top:1px solid #dbe4ff;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-            <tr>
-                <td style="font-size:12px;color:#777777;padding:6px 0 4px;">Amount paid</td>
-                <td align="right" style="font-size:16px;font-weight:bold;color:#1d4ed8;padding:6px 0 4px;">INR {{ $amount ?? '' }}</td>
-            </tr>
-            <tr><td colspan="2" style="border-top:1px solid #dbe4ff;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-            <tr>
-                <td style="font-size:12px;color:#777777;padding-top:10px;">Valid till</td>
-                <td align="right" style="font-size:14px;font-weight:bold;color:#111111;padding-top:10px;">{{ $valid_till ?? '' }}</td>
-            </tr>
-        </table>
-    </td></tr>
-    </table>
-
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top:36px;margin-bottom:32px;">
-        <tr><td style="font-size:13px;color:#555555;line-height:1.6;">
-            Thank you for choosing GoerOne.<br><br>
-            Warm regards,<br><strong style="color:#111111;">Team GoerOne</strong>
-        </td></tr>
-    </table>
-
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-top:1px solid #e8ecf5;">
-        <tr><td style="font-size:11px;color:#888888;line-height:1.5;padding-top:20px;">
-            <strong>Note:</strong> This is an automated message from an unmonitored email address. Please do not reply to this email.
-        </td></tr>
-    </table>
-
-</td></tr></table>
-</td></tr></table>
 </body>
+
 </html>

@@ -7,6 +7,7 @@ use App\Models\RewardWalletTemp;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\WalletModel;
+use App\Services\Notifications\GoerOneNotifier;
 use App\Services\NotifyMasterBellIcon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -577,6 +578,19 @@ class WalletController extends Controller
                         $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
                         $payload['uploaded_bill']     = $billUrl ?? $RewardWalletTemp->uploaded_bill;
                         RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+                    
+                        // To send notification to customers on approval of cashback
+                        // $cashbackStoreId = LoyaltyRedemption::where('redemption_id', $RewardWalletTemp->redemption_id)->value('stores_id');
+
+                        // DB::afterCommit(function () use ($RewardWalletTemp, $cashbackStoreId, $request) {
+                        //     GoerOneNotifier::send('cashback_approved', [
+                        //         'customer_id' => $RewardWalletTemp->payee_id,
+                        //         'store_id'    => $cashbackStoreId,
+                        //         'amount'      => $RewardWalletTemp->points ?? 0,
+                        //         'ref'         => $RewardWalletTemp->ReferenceNo,
+                        //         'ip'          => $request->ip(),
+                        //     ]);
+                        // });
                     }
 
                     // Tell the store only when someone else processed it (a store approving its own entry needs no notice)
