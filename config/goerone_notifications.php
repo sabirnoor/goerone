@@ -41,7 +41,7 @@ return [
             'recipients' => [
                 'customer' => [
                     'mail'     => ['view' => 'emails.membership_purchased_customer', 'subject' => 'Your {membership_name} membership is active - GoerOne'],
-                    'whatsapp' => 'goerone_membership_purchase',
+                    // 'whatsapp' => 'goerone_membership_purchase',
                 ],
             ],
         ],

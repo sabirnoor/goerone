@@ -40,6 +40,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Services\EmailService;
 use App\Services\Notifications\GoerOneNotifier;
+use App\Services\NotifyMasterBellIcon;
 use Illuminate\Support\Facades\Log;
 
 // use App\Services\StorePaymentNotifier;
@@ -954,6 +955,26 @@ class LoyaltyController extends Controller
 
                             $this->StorePaymentcallback($request);
 
+                            // bell notifications for the store
+                            $notifier = app(NotifyMasterBellIcon::class);
+                            $custName = trim(($user->fname ?? '') . ' ' . ($user->lname ?? '')) ?: ($user->name ?? 'Customer');
+
+                            $notifier->send('payment_received', 'store', (int) $stores_id, (int) $AgencyID, [
+                                'amount'        => (float) $request->order_amount,
+                                'net_amount'    => (float) $request->order_amount - ((float) $discount + (float) $store_discount),
+                                'customer'      => $custName,
+                                'ref'           => $referneceNo,
+                                'redemption_id' => $redemption_id,
+                            ], 'payment_received:' . $redemption_id);
+
+                             if ($rewardEarns > 0) {
+                                $notifier->send('cashback_pending', 'store', (int) $stores_id, (int) $AgencyID, [
+                                    'cashback'      => (float) $rewardEarns,
+                                    'customer'      => $custName,
+                                    'ref'           => $referneceNo,
+                                    'redemption_id' => $redemption_id,
+                                ], 'cashback_pending:' . $redemption_id);
+                            }
                             // For Notification to customer and store 
                             // if ((int) ($request->mep ?? 0) !== 1) {   
                             //     GoerOneNotifier::send('store_payment', [
@@ -1053,6 +1074,18 @@ class LoyaltyController extends Controller
 
         ]);
 
+            // GoerOneNotifier::send('membership_purchased', [
+            //                 'customer_id'     => 364,
+            //                 'invoice_id'      => 1025,        // <- triggers the PDF attachment
+            //                 'membership_name' => 'Goerone',          // builder reads membership_name, not membership
+            //                 'amount'          => 3675,       // amount actually paid (after coins)
+            //                 'valid_till'      => '27-11-2027',
+            //                 'ref'             => 'T9QBX87B5V',
+            //                 'ip'              => $request->ip(),
+            //                 'payment_at'      => Carbon::now()->format('d M Y, h:i A'),
+            //             ]);
+
+
         if ($validator->fails()) {
             $errors = json_encode($validator->messages());
             $errorArray = [];
@@ -1150,8 +1183,8 @@ class LoyaltyController extends Controller
 
                    // $cashPaid  = round((float) ($walletTransactions->amount ?? 0), 2);
                    // coins spent on this purchase (the "Pay" row, not the Welcome row)
-                //    $coinsUsed = (!empty($BalanceDR) && ($BalanceDR['RewardMode'] ?? '') === 'Pay')
-                //        ? round((float) $BalanceDR['points'], 2) : 0;
+                   // $coinsUsed = (!empty($BalanceDR) && ($BalanceDR['RewardMode'] ?? '') === 'Pay')
+                   //     ? round((float) $BalanceDR['points'], 2) : 0;
 
                    $totalPayable = round($cashPaid + $coinsUsed, 2);                 // incl. GST, after credit, before coins
                    $taxable      = round($totalPayable / (1 + $gstRate / 100), 2);   // GST-excluded value

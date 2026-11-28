@@ -5,6 +5,7 @@ use App\Http\Controllers\API\EarningController;
 use App\Http\Controllers\LegalPolicyController;
 use App\Http\Controllers\API\LoyaltyController;
 use App\Http\Controllers\API\MembershipController;
+use App\Http\Controllers\API\NotificationMasterController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\StoreController;
 use App\Http\Controllers\API\StoreOnboardingController;
@@ -198,6 +199,14 @@ Route::middleware(['auth:sanctum', EnsureStoreApproved::class])->group(function 
     Route::post('store-settlements/my-list',      [StoreSettlementController::class, 'storeIndex']); // NEW
     Route::post('store-settlements/my-due',       [StoreSettlementController::class, 'storeDueTransactions']);
     Route::post('store-settlements/my-show/{id}', [StoreSettlementController::class, 'storeShow'])->whereNumber('id');
+
+    Route::prefix('notifications')->group(function () {
+    Route::post('/', [NotificationMasterController::class, 'index']);
+    Route::get('/unread-count', [NotificationMasterController::class, 'unreadCount']);
+    Route::post('/read-all', [NotificationMasterController::class, 'markAllRead']);
+    Route::post('/{id}/read', [NotificationMasterController::class, 'markRead'])->whereNumber('id');
+    });
+
 });
 Route::any('/store/login', [StoreAuthController::class, 'login']);
 Route::any('/verify-otp-store', [StoreAuthController::class, 'verifyOtpStore']);

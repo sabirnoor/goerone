@@ -641,3 +641,33 @@ AFTER `commission_amount`;
 
 ALTER TABLE `store_settlement_payments`
 ADD COLUMN `bank_details` JSON NULL AFTER `direction`;
+
+CREATE TABLE `notification_master` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    `AgencyID` BIGINT UNSIGNED NOT NULL,
+
+    `recipient_type` VARCHAR(20) NOT NULL,
+    `recipient_id` BIGINT UNSIGNED NOT NULL,
+
+    `type` VARCHAR(60) NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `message` TEXT NOT NULL,
+    `data` JSON DEFAULT NULL,
+    `action_url` VARCHAR(255) DEFAULT NULL,
+
+    `dedupe_key` VARCHAR(120) DEFAULT NULL,
+
+    `read_at` TIMESTAMP NULL DEFAULT NULL,
+
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+
+    UNIQUE KEY `nm_recipient_dedupe_unique`
+        (`recipient_type`, `recipient_id`, `dedupe_key`),
+
+    INDEX `nm_recipient_feed_idx`
+        (`recipient_type`, `recipient_id`, `read_at`, `created_at`),
+
+    INDEX `notification_master_agencyid_index` (`AgencyID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LoyaltyRedemption;
 use App\Models\RewardWalletTemp;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\WalletModel;
+use App\Services\NotifyMasterBellIcon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -575,6 +577,24 @@ class WalletController extends Controller
                         $payload['status']   = RewardWalletTemp::STATUS_SUCCESS;
                         $payload['uploaded_bill']     = $billUrl ?? $RewardWalletTemp->uploaded_bill;
                         RewardWalletTemp::where('id', $request->ledger_id)->where('AgencyID', $AgencyID)->update($payload);
+                    }
+
+                    // Tell the store only when someone else processed it (a store approving its own entry needs no notice)
+                    if (!($request->user() instanceof Store)) {
+                        $notifyStoreId = LoyaltyRedemption::where('redemption_id', $RewardWalletTemp->redemption_id)->value('stores_id');
+                        if ($notifyStoreId) {
+                            $customer = User::without('details', 'agency', 'symbal')->find($RewardWalletTemp->payee_id);
+                            $custName = trim(($customer->fname ?? '') . ' ' . ($customer->lname ?? '')) ?: ($customer->name ?? 'Customer');
+                            $notifyType = ((int) $is_rejected === 1) ? 'cashback_rejected' : 'cashback_released';
+
+                            app(NotifyMasterBellIcon::class)->send($notifyType, 'store', (int) $notifyStoreId, (int) $AgencyID, [
+                                'cashback'      => (float) ($RewardWalletTemp->points ?? 0),
+                                'customer'      => $custName,
+                                'ref'           => $RewardWalletTemp->ReferenceNo,
+                                'redemption_id' => $RewardWalletTemp->redemption_id,
+                                'remarks'       => $remarks,
+                            ], $notifyType . ':' . $request->ledger_id);
+                        }
                     }
 
                     return response()->json([
